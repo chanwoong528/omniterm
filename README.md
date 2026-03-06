@@ -25,9 +25,18 @@ npm run tauri:dev
 
 ## 로컬에서 빌드 (설치용 파일 만들기)
 
+**본인 Mac과 같은 아키텍처만** 빌드할 때:
+
 ```bash
 npm ci
 npm run tauri:build:local
+```
+
+**Intel(x86_64)용을 Apple Silicon Mac에서** 빌드할 때는 먼저 타깃을 설치한 뒤 빌드하세요:
+
+```bash
+rustup target add x86_64-apple-darwin
+npm run tauri build -- --target x86_64-apple-darwin
 ```
 
 생성 위치:
