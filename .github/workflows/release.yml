@@ -1,0 +1,63 @@
+# OmniTerm: 빌드 후 GitHub Release에 DMG/앱 업로드
+# 트리거: v* 태그 푸시, 또는 release 브랜치 푸시, 또는 수동 실행
+name: Release
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - 'v*'
+    branches:
+      - release
+
+jobs:
+  build:
+    permissions:
+      contents: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: macos-latest
+            args: --target aarch64-apple-darwin
+            name: macos-aarch64
+          - platform: macos-latest
+            args: --target x86_64-apple-darwin
+            name: macos-x64
+
+    runs-on: ${{ matrix.platform }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 'lts/*'
+          cache: 'npm'
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin,x86_64-apple-darwin
+
+      - name: Rust cache
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: 'src-tauri -> target'
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - name: Build Tauri app
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tagName: v__VERSION__
+          releaseName: 'OmniTerm v__VERSION__'
+          releaseBody: '다운로드 후 설치해서 사용하세요. macOS Apple Silicon은 macos-aarch64, Intel은 macos-x64를 받으세요.'
+          releaseDraft: true
+          prerelease: false
+          args: ${{ matrix.args }}
