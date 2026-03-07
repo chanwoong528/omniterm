@@ -63,6 +63,6 @@ jobs:
           tagName: v__VERSION__
           releaseName: 'OmniTerm v__VERSION__'
           releaseBody: '다운로드 후 설치해서 사용하세요. macOS Apple Silicon은 macos-aarch64, Intel은 macos-x64를 받으세요.'
-          releaseDraft: true
+          releaseDraft: false
           prerelease: false
           args: ${{ matrix.args }}
