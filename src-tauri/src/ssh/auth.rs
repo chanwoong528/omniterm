@@ -5,6 +5,7 @@ use serde::Deserialize;
 pub enum AuthMethod {
     Password,
     PrivateKey,
+    Agent,
 }
 
 #[derive(Debug, Clone)]
@@ -29,6 +30,14 @@ impl AuthPayload {
             method: AuthMethod::PrivateKey,
             password: None,
             private_key_path: Some(path),
+        }
+    }
+
+    pub fn with_agent() -> Self {
+        Self {
+            method: AuthMethod::Agent,
+            password: None,
+            private_key_path: None,
         }
     }
 }

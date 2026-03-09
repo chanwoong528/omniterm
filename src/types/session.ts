@@ -1,5 +1,5 @@
 /** SSH 인증 방식 */
-export type AuthMethod = 'password' | 'private_key';
+export type AuthMethod = 'password' | 'private_key' | 'agent';
 
 /** Bastion(Jump Host) 서버 설정 */
 export interface BastionConfig {
@@ -28,5 +28,7 @@ export interface SavedSession {
   target: TargetServerConfig;
   useBastion: boolean;
   bastion?: BastionConfig;
+  /** When true, reuse the bastion auth settings for the target (ProxyJump-like). */
+  reuseBastionAuth?: boolean;
   lastConnectedAt?: string;
 }

@@ -212,6 +212,9 @@ export function SftpExplorer() {
             onKeyDown={(e) => {
               if (e.key === 'Enter') void loadDirectory();
             }}
+            autoCapitalize="none"
+            autoCorrect="off"
+            spellCheck={false}
             placeholder="Remote path (e.g. ~ or /home/username)"
             className="min-w-0 flex-1 rounded border border-zinc-700 bg-zinc-800 px-2 py-1.5 text-xs text-zinc-100 placeholder-zinc-500 focus:border-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-500"
             aria-label="Remote path on connected server"

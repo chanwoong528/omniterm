@@ -55,10 +55,8 @@ export function Sidebar({ widthPx }: SidebarProps) {
     targetPassword: string | undefined,
     bastionPassword: string | undefined
   ) => {
-    const target: TargetServerConfig =
-      session.target.authMethod === 'password'
-        ? { ...session.target, password: targetPassword ?? undefined }
-        : { ...session.target };
+    const shouldReuseBastionAuth =
+      Boolean(session.useBastion && session.reuseBastionAuth && session.bastion);
 
     const bastion: BastionConfig | undefined =
       session.useBastion && session.bastion
@@ -66,6 +64,22 @@ export function Sidebar({ widthPx }: SidebarProps) {
           ? { ...session.bastion, password: bastionPassword ?? undefined }
           : { ...session.bastion }
         : undefined;
+
+    const target: TargetServerConfig = (() => {
+      if (shouldReuseBastionAuth && bastion) {
+        if (bastion.authMethod === 'password') {
+          return { ...session.target, authMethod: 'password', password: bastion.password };
+        }
+        if (bastion.authMethod === 'private_key') {
+          return { ...session.target, authMethod: 'private_key', privateKeyId: bastion.privateKeyId };
+        }
+        return { ...session.target, authMethod: 'agent' };
+      }
+      if (session.target.authMethod === 'password') {
+        return { ...session.target, password: targetPassword ?? undefined };
+      }
+      return { ...session.target };
+    })();
 
     const runtimeSessionId = await establishConnection(target, session.useBastion, bastion);
     if (!runtimeSessionId) return;
@@ -80,9 +94,12 @@ export function Sidebar({ widthPx }: SidebarProps) {
   const connectSavedSession = async (session: SavedSession) => {
     if (isConnecting) return;
 
-    const needsTargetPassword = session.target.authMethod === 'password';
+    const shouldReuseBastionAuth =
+      Boolean(session.useBastion && session.reuseBastionAuth && session.bastion);
     const needsBastionPassword =
       session.useBastion && session.bastion?.authMethod === 'password';
+    const needsTargetPassword =
+      !shouldReuseBastionAuth && session.target.authMethod === 'password';
 
     if (needsTargetPassword || needsBastionPassword) {
       setPasswordPromptSession(session);
@@ -98,8 +115,10 @@ export function Sidebar({ widthPx }: SidebarProps) {
     e.preventDefault();
     const session = passwordPromptSession;
     if (!session || isConnecting) return;
-    const needsTarget = session.target.authMethod === 'password';
+    const shouldReuseBastionAuth =
+      Boolean(session.useBastion && session.reuseBastionAuth && session.bastion);
     const needsBastion = session.useBastion && session.bastion?.authMethod === 'password';
+    const needsTarget = !shouldReuseBastionAuth && session.target.authMethod === 'password';
     if (needsTarget && !passwordPromptTargetPassword.trim()) return;
     if (needsBastion && !passwordPromptBastionPassword.trim()) return;
 
@@ -117,6 +136,7 @@ export function Sidebar({ widthPx }: SidebarProps) {
     target: TargetServerConfig;
     useBastion: boolean;
     bastion?: BastionConfig;
+    reuseBastionAuth?: boolean;
     saveSession?: { id: string; label: string } | null;
   }) => {
     const sessionId = await establishConnection(args.target, args.useBastion, args.bastion);
@@ -144,6 +164,7 @@ export function Sidebar({ widthPx }: SidebarProps) {
           target: sanitizeTarget,
           useBastion: args.useBastion,
           bastion: sanitizeBastion,
+          reuseBastionAuth: args.reuseBastionAuth ?? false,
           lastConnectedAt: new Date().toISOString(),
         };
         upsertSession(saved);
@@ -183,99 +204,119 @@ export function Sidebar({ widthPx }: SidebarProps) {
       </div>
 
       <div className="flex min-w-0 flex-1 flex-col overflow-x-hidden overflow-y-auto p-3">
-        {activeTab === 'sessions' && (
-          <div
-            id="panel-sessions"
-            role="tabpanel"
-            aria-labelledby="tab-sessions"
-            className="flex min-w-0 flex-col gap-4"
-          >
-            {connectionError && (
-              <p className="rounded bg-red-900/30 px-3 py-2 text-sm text-red-300" role="alert">
-                {connectionError}
-              </p>
-            )}
-            {successToastMessage && (
-              <p className="rounded bg-emerald-900/30 px-3 py-2 text-sm text-emerald-300" role="status">
-                {successToastMessage}
-              </p>
-            )}
-            <SessionForm
-              key={activeSavedSessionId ?? 'new'}
-              onConnect={handleConnect}
-              isConnecting={isConnecting}
-            />
-            <div className="border-t border-zinc-800 pt-3">
-              <h3 className="mb-2 text-xs font-medium uppercase tracking-wide text-zinc-500">
-                Saved sessions
-              </h3>
-              {passwordPromptSession && (
-                <form
-                  onSubmit={onSubmitPasswordPrompt}
-                  className="mb-3 rounded border border-zinc-600 bg-zinc-800/80 p-3"
-                >
-                  <p className="mb-2 text-xs text-zinc-300">
-                    비밀번호 입력: {passwordPromptSession.label}
-                  </p>
-                  {passwordPromptSession.target.authMethod === 'password' && (
+        <div
+          id="panel-sessions"
+          role="tabpanel"
+          aria-labelledby="tab-sessions"
+          hidden={activeTab !== 'sessions'}
+          className="flex min-w-0 flex-col gap-4"
+        >
+          {connectionError && (
+            <p className="rounded bg-red-900/30 px-3 py-2 text-sm text-red-300" role="alert">
+              {connectionError}
+            </p>
+          )}
+          {successToastMessage && (
+            <p className="rounded bg-emerald-900/30 px-3 py-2 text-sm text-emerald-300" role="status">
+              {successToastMessage}
+            </p>
+          )}
+          <SessionForm
+            key={activeSavedSessionId ?? 'new'}
+            onConnect={handleConnect}
+            isConnecting={isConnecting}
+          />
+          <div className="border-t border-zinc-800 pt-3">
+            <h3 className="mb-2 text-xs font-medium uppercase tracking-wide text-zinc-500">
+              Saved sessions
+            </h3>
+            {passwordPromptSession && (
+              <form
+                onSubmit={onSubmitPasswordPrompt}
+                className="mb-3 rounded border border-zinc-600 bg-zinc-800/80 p-3"
+              >
+                {(() => {
+                  const shouldReuseBastionAuth = Boolean(
+                    passwordPromptSession.useBastion &&
+                      passwordPromptSession.reuseBastionAuth &&
+                      passwordPromptSession.bastion
+                  );
+                  const showTargetPassword =
+                    !shouldReuseBastionAuth && passwordPromptSession.target.authMethod === 'password';
+                  const showBastionPassword =
+                    passwordPromptSession.useBastion &&
+                    passwordPromptSession.bastion?.authMethod === 'password';
+                  return (
+                    <>
+                <p className="mb-2 text-xs text-zinc-300">
+                  비밀번호 입력: {passwordPromptSession.label}
+                </p>
+                {showTargetPassword && (
+                  <input
+                    type="password"
+                    placeholder="Target password"
+                    value={passwordPromptTargetPassword}
+                    onChange={(e) => setPasswordPromptTargetPassword(e.target.value)}
+                    autoCapitalize="none"
+                    autoCorrect="off"
+                    spellCheck={false}
+                    className="mb-2 w-full rounded border border-zinc-600 bg-zinc-800 px-2 py-1.5 text-sm text-zinc-100 placeholder-zinc-500 focus:border-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-500"
+                    autoComplete="current-password"
+                    aria-label="Target server password"
+                  />
+                )}
+                {showBastionPassword && (
                     <input
                       type="password"
-                      placeholder="Target password"
-                      value={passwordPromptTargetPassword}
-                      onChange={(e) => setPasswordPromptTargetPassword(e.target.value)}
+                      placeholder={shouldReuseBastionAuth ? 'Bastion/Target password' : 'Bastion password'}
+                      value={passwordPromptBastionPassword}
+                      onChange={(e) => setPasswordPromptBastionPassword(e.target.value)}
+                      autoCapitalize="none"
+                      autoCorrect="off"
+                      spellCheck={false}
                       className="mb-2 w-full rounded border border-zinc-600 bg-zinc-800 px-2 py-1.5 text-sm text-zinc-100 placeholder-zinc-500 focus:border-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-500"
                       autoComplete="current-password"
-                      aria-label="Target server password"
+                      aria-label="Bastion server password"
                     />
-                  )}
-                  {passwordPromptSession.useBastion &&
-                    passwordPromptSession.bastion?.authMethod === 'password' && (
-                      <input
-                        type="password"
-                        placeholder="Bastion password"
-                        value={passwordPromptBastionPassword}
-                        onChange={(e) => setPasswordPromptBastionPassword(e.target.value)}
-                        className="mb-2 w-full rounded border border-zinc-600 bg-zinc-800 px-2 py-1.5 text-sm text-zinc-100 placeholder-zinc-500 focus:border-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-500"
-                        autoComplete="current-password"
-                        aria-label="Bastion server password"
-                      />
-                    )}
-                  <div className="flex gap-2">
-                    <button
-                      type="submit"
-                      disabled={isConnecting}
-                      className="rounded bg-zinc-600 px-2 py-1.5 text-xs text-white hover:bg-zinc-500 disabled:opacity-50"
-                    >
-                      {isConnecting ? '연결 중…' : '연결'}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setPasswordPromptSession(null);
-                        setPasswordPromptTargetPassword('');
-                        setPasswordPromptBastionPassword('');
-                      }}
-                      className="rounded px-2 py-1.5 text-xs text-zinc-400 hover:bg-zinc-700 hover:text-zinc-200"
-                    >
-                      취소
-                    </button>
-                  </div>
-                </form>
-              )}
-              <SessionList onConnectSavedSession={connectSavedSession} isConnecting={isConnecting} />
-            </div>
+                )}
+                <div className="flex gap-2">
+                  <button
+                    type="submit"
+                    disabled={isConnecting}
+                    className="rounded bg-zinc-600 px-2 py-1.5 text-xs text-white hover:bg-zinc-500 disabled:opacity-50"
+                  >
+                    {isConnecting ? '연결 중…' : '연결'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setPasswordPromptSession(null);
+                      setPasswordPromptTargetPassword('');
+                      setPasswordPromptBastionPassword('');
+                    }}
+                    className="rounded px-2 py-1.5 text-xs text-zinc-400 hover:bg-zinc-700 hover:text-zinc-200"
+                  >
+                    취소
+                  </button>
+                </div>
+                    </>
+                  );
+                })()}
+              </form>
+            )}
+            <SessionList onConnectSavedSession={connectSavedSession} isConnecting={isConnecting} />
           </div>
-        )}
-        {activeTab === 'keys' && (
-          <div
-            id="panel-keys"
-            role="tabpanel"
-            aria-labelledby="tab-keys"
-            className="min-w-0"
-          >
-            <KeyManagerPanel />
-          </div>
-        )}
+        </div>
+
+        <div
+          id="panel-keys"
+          role="tabpanel"
+          aria-labelledby="tab-keys"
+          hidden={activeTab !== 'keys'}
+          className="min-w-0"
+        >
+          <KeyManagerPanel />
+        </div>
       </div>
     </aside>
   );

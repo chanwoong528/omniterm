@@ -12,8 +12,10 @@ pub fn run() {
     tauri::Builder::default()
         .manage(ssh_manager)
         .manage(shell_manager)
+        .plugin(tauri_plugin_dialog::init())
         .invoke_handler(tauri::generate_handler![
             commands::ssh_connection::establish_ssh_connection,
+            commands::ssh_agent::ssh_agent_add_key,
             commands::system::get_os_username,
             commands::terminal::spawn_pty_process,
             commands::terminal::write_to_terminal,

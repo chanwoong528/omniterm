@@ -13,6 +13,7 @@ interface SessionFormProps {
     target: TargetServerConfig;
     useBastion: boolean;
     bastion?: BastionConfig;
+    reuseBastionAuth?: boolean;
     saveSession?: { id: string; label: string } | null;
   }) => void;
   isConnecting?: boolean;
@@ -40,6 +41,7 @@ export function SessionForm({ onConnect, isConnecting = false }: SessionFormProp
   }, [activeSessionId, getSessionById]);
 
   const [useBastion, setUseBastion] = useState(() => selectedSession?.useBastion ?? false);
+  const [reuseBastionAuth, setReuseBastionAuth] = useState(() => selectedSession?.reuseBastionAuth ?? false);
 
   const [sessionLabel, setSessionLabel] = useState(() => selectedSession?.label ?? '');
   const [saveEnabled, setSaveEnabled] = useState(DEFAULT_SAVE_ENABLED);
@@ -58,13 +60,27 @@ export function SessionForm({ onConnect, isConnecting = false }: SessionFormProp
   const [bastionPassword, setBastionPassword] = useState('');
   const [bastionKeyId, setBastionKeyId] = useState<string>(() => selectedSession?.bastion?.privateKeyId ?? '');
 
-  const buildTargetConfig = (): TargetServerConfig => ({
-    host: targetHost.trim(),
-    port: targetPort,
-    username: targetUsername.trim(),
-    authMethod: targetAuthMethod,
-    ...(targetAuthMethod === 'password' ? { password: targetPassword } : { privateKeyId: targetKeyId || undefined }),
-  });
+  const buildTargetConfig = (): TargetServerConfig => {
+    const shouldReuse = useBastion && reuseBastionAuth;
+    const authMethod: AuthMethod = shouldReuse ? bastionAuthMethod : targetAuthMethod;
+    const base: TargetServerConfig = {
+      host: targetHost.trim(),
+      port: targetPort,
+      username: targetUsername.trim(),
+      authMethod,
+    };
+
+    if (shouldReuse) {
+      if (bastionAuthMethod === 'password') return { ...base, password: bastionPassword };
+      if (bastionAuthMethod === 'private_key')
+        return { ...base, privateKeyId: bastionKeyId || undefined };
+      return base;
+    }
+
+    if (targetAuthMethod === 'password') return { ...base, password: targetPassword };
+    if (targetAuthMethod === 'private_key') return { ...base, privateKeyId: targetKeyId || undefined };
+    return base;
+  };
 
   const buildBastionConfig = (): BastionConfig | undefined => {
     if (!useBastion || !bastionHost.trim()) return undefined;
@@ -73,7 +89,11 @@ export function SessionForm({ onConnect, isConnecting = false }: SessionFormProp
       port: bastionPort,
       username: bastionUsername.trim(),
       authMethod: bastionAuthMethod,
-      ...(bastionAuthMethod === 'password' ? { password: bastionPassword } : { privateKeyId: bastionKeyId || undefined }),
+      ...(bastionAuthMethod === 'password'
+        ? { password: bastionPassword }
+        : bastionAuthMethod === 'private_key'
+          ? { privateKeyId: bastionKeyId || undefined }
+          : {}),
     };
   };
 
@@ -90,15 +110,29 @@ export function SessionForm({ onConnect, isConnecting = false }: SessionFormProp
       target,
       useBastion,
       bastion,
+      reuseBastionAuth: useBastion ? reuseBastionAuth : false,
       saveSession,
     });
   };
 
+  const isTargetAuthValid = (() => {
+    const shouldReuse = useBastion && reuseBastionAuth;
+    if (shouldReuse) {
+      if (bastionAuthMethod === 'private_key') return bastionKeyId !== '';
+      return true;
+    }
+    if (targetAuthMethod === 'private_key') return targetKeyId !== '';
+    return true;
+  })();
   const isTargetFormValid =
     targetHost.trim() !== '' &&
     targetUsername.trim() !== '' &&
-    (targetAuthMethod === 'password' ? true : targetKeyId !== '');
-  const isBastionFormValid = !useBastion || (bastionHost.trim() !== '' && bastionUsername.trim() !== '' && (bastionAuthMethod === 'password' ? true : bastionKeyId !== ''));
+    isTargetAuthValid;
+  const isBastionFormValid =
+    !useBastion ||
+    (bastionHost.trim() !== '' &&
+      bastionUsername.trim() !== '' &&
+      (bastionAuthMethod === 'private_key' ? bastionKeyId !== '' : true));
   const canSubmit = isTargetFormValid && isBastionFormValid && !isConnecting;
 
   const fillLocalhostTest = async () => {
@@ -106,6 +140,7 @@ export function SessionForm({ onConnect, isConnecting = false }: SessionFormProp
     setTargetPort(22);
     setTargetAuthMethod('password');
     setUseBastion(false);
+    setReuseBastionAuth(false);
     try {
       const username = await invoke<string>('get_os_username');
       if (username) setTargetUsername(username);
@@ -136,6 +171,9 @@ export function SessionForm({ onConnect, isConnecting = false }: SessionFormProp
           placeholder="Label (e.g. Prod Bastion)"
           value={sessionLabel}
           onChange={(e) => setSessionLabel(e.target.value)}
+          autoCapitalize="none"
+          autoCorrect="off"
+          spellCheck={false}
           className="min-w-0 rounded border border-zinc-600 bg-zinc-800 px-3 py-2 text-sm text-zinc-100 placeholder-zinc-500 focus:border-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-500"
           aria-label="Saved session label"
         />
@@ -162,6 +200,9 @@ export function SessionForm({ onConnect, isConnecting = false }: SessionFormProp
           placeholder="Host"
           value={targetHost}
           onChange={(e) => setTargetHost(e.target.value)}
+          autoCapitalize="none"
+          autoCorrect="off"
+          spellCheck={false}
           className="min-w-0 rounded border border-zinc-600 bg-zinc-800 px-3 py-2 text-sm text-zinc-100 placeholder-zinc-500 focus:border-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-500"
           aria-label="Target server host"
         />
@@ -181,6 +222,9 @@ export function SessionForm({ onConnect, isConnecting = false }: SessionFormProp
             placeholder="Username"
             value={targetUsername}
             onChange={(e) => setTargetUsername(e.target.value)}
+            autoCapitalize="none"
+            autoCorrect="off"
+            spellCheck={false}
             className="min-w-0 flex-1 rounded border border-zinc-600 bg-zinc-800 px-3 py-2 text-sm text-zinc-100 placeholder-zinc-500 focus:border-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-500"
             aria-label="Target server username"
           />
@@ -194,6 +238,7 @@ export function SessionForm({ onConnect, isConnecting = false }: SessionFormProp
           keyId={targetKeyId}
           onKeyIdChange={setTargetKeyId}
           registeredKeys={registeredKeys}
+          isDisabled={useBastion && reuseBastionAuth}
         />
       </fieldset>
 
@@ -219,6 +264,9 @@ export function SessionForm({ onConnect, isConnecting = false }: SessionFormProp
             placeholder="Bastion host"
             value={bastionHost}
             onChange={(e) => setBastionHost(e.target.value)}
+            autoCapitalize="none"
+            autoCorrect="off"
+            spellCheck={false}
             className="min-w-0 rounded border border-zinc-600 bg-zinc-800 px-3 py-2 text-sm text-zinc-100 placeholder-zinc-500 focus:border-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-500"
             aria-label="Bastion server host"
           />
@@ -238,6 +286,9 @@ export function SessionForm({ onConnect, isConnecting = false }: SessionFormProp
               placeholder="Bastion username"
               value={bastionUsername}
               onChange={(e) => setBastionUsername(e.target.value)}
+              autoCapitalize="none"
+              autoCorrect="off"
+              spellCheck={false}
               className="min-w-0 flex-1 rounded border border-zinc-600 bg-zinc-800 px-3 py-2 text-sm text-zinc-100 placeholder-zinc-500 focus:border-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-500"
               aria-label="Bastion server username"
             />
@@ -252,6 +303,18 @@ export function SessionForm({ onConnect, isConnecting = false }: SessionFormProp
             onKeyIdChange={setBastionKeyId}
             registeredKeys={registeredKeys}
           />
+          <label className="flex min-w-0 cursor-pointer items-center gap-2 pt-1">
+            <input
+              type="checkbox"
+              checked={reuseBastionAuth}
+              onChange={(e) => setReuseBastionAuth(e.target.checked)}
+              className="h-4 w-4 shrink-0 rounded border-zinc-600 bg-zinc-800 text-zinc-400 focus:ring-zinc-500"
+              aria-label="Reuse bastion authentication for target server"
+            />
+            <span className="min-w-0 truncate text-sm text-zinc-300">
+              Reuse bastion auth for target (ProxyJump-like)
+            </span>
+          </label>
         </fieldset>
       )}
 
@@ -277,6 +340,7 @@ function AuthFields({
   keyId,
   onKeyIdChange,
   registeredKeys,
+  isDisabled = false,
 }: {
   namePrefix: string;
   authMethod: AuthMethod;
@@ -286,12 +350,17 @@ function AuthFields({
   keyId: string;
   onKeyIdChange: (v: string) => void;
   registeredKeys: { id: string; label: string; keyType: string }[];
+  isDisabled?: boolean;
 }) {
   const radioName = `${namePrefix}-auth-method`;
   return (
     <div className="flex min-w-0 flex-col gap-2">
       <div className="flex min-w-0 gap-2">
-        <label className="flex min-w-0 flex-1 cursor-pointer items-center gap-2 overflow-hidden rounded border border-zinc-600 bg-zinc-800 px-2 py-2 has-checked:border-zinc-500 has-checked:ring-1 has-checked:ring-zinc-500">
+        <label
+          className={`flex min-w-0 flex-1 cursor-pointer items-center gap-2 overflow-hidden rounded border border-zinc-600 bg-zinc-800 px-2 py-2 has-checked:border-zinc-500 has-checked:ring-1 has-checked:ring-zinc-500 ${
+            isDisabled ? 'pointer-events-none opacity-60' : ''
+          }`}
+        >
           <input
             type="radio"
             name={radioName}
@@ -299,11 +368,16 @@ function AuthFields({
             onChange={() => onAuthMethodChange('password')}
             className="sr-only"
             aria-label="Password authentication"
+            disabled={isDisabled}
           />
           <Key className="h-4 w-4 shrink-0 text-zinc-400" aria-hidden />
           <span className="truncate text-sm text-zinc-300">Password</span>
         </label>
-        <label className="flex min-w-0 flex-1 cursor-pointer items-center gap-2 overflow-hidden rounded border border-zinc-600 bg-zinc-800 px-2 py-2 has-checked:border-zinc-500 has-checked:ring-1 has-checked:ring-zinc-500">
+        <label
+          className={`flex min-w-0 flex-1 cursor-pointer items-center gap-2 overflow-hidden rounded border border-zinc-600 bg-zinc-800 px-2 py-2 has-checked:border-zinc-500 has-checked:ring-1 has-checked:ring-zinc-500 ${
+            isDisabled ? 'pointer-events-none opacity-60' : ''
+          }`}
+        >
           <input
             type="radio"
             name={radioName}
@@ -311,9 +385,27 @@ function AuthFields({
             onChange={() => onAuthMethodChange('private_key')}
             className="sr-only"
             aria-label="Private key authentication"
+            disabled={isDisabled}
           />
           <Key className="h-4 w-4 shrink-0 text-zinc-400" aria-hidden />
           <span className="truncate text-sm text-zinc-300">Private Key</span>
+        </label>
+        <label
+          className={`flex min-w-0 flex-1 cursor-pointer items-center gap-2 overflow-hidden rounded border border-zinc-600 bg-zinc-800 px-2 py-2 has-checked:border-zinc-500 has-checked:ring-1 has-checked:ring-zinc-500 ${
+            isDisabled ? 'pointer-events-none opacity-60' : ''
+          }`}
+        >
+          <input
+            type="radio"
+            name={radioName}
+            checked={authMethod === 'agent'}
+            onChange={() => onAuthMethodChange('agent')}
+            className="sr-only"
+            aria-label="SSH agent authentication"
+            disabled={isDisabled}
+          />
+          <Key className="h-4 w-4 shrink-0 text-zinc-400" aria-hidden />
+          <span className="truncate text-sm text-zinc-300">SSH Agent</span>
         </label>
       </div>
       {authMethod === 'password' ? (
@@ -322,14 +414,21 @@ function AuthFields({
           placeholder="Password"
           value={password}
           onChange={(e) => onPasswordChange(e.target.value)}
-          className="min-w-0 rounded border border-zinc-600 bg-zinc-800 px-3 py-2 text-sm text-zinc-100 placeholder-zinc-500 focus:border-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-500"
+          autoCapitalize="none"
+          autoCorrect="off"
+          spellCheck={false}
+          disabled={isDisabled}
+          className={`min-w-0 rounded border border-zinc-600 bg-zinc-800 px-3 py-2 text-sm text-zinc-100 placeholder-zinc-500 focus:border-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-500 ${
+            isDisabled ? 'opacity-60' : ''
+          }`}
           aria-label="SSH password"
         />
-      ) : (
-        <div className="relative min-w-0">
+      ) : authMethod === 'private_key' ? (
+        <div className={`relative min-w-0 ${isDisabled ? 'pointer-events-none opacity-60' : ''}`}>
           <select
             value={keyId}
             onChange={(e) => onKeyIdChange(e.target.value)}
+            disabled={isDisabled}
             className="min-w-0 w-full appearance-none rounded border border-zinc-600 bg-zinc-800 px-3 py-2 pr-8 text-sm text-zinc-100 focus:border-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-500"
             aria-label="Select private key"
           >
@@ -342,6 +441,10 @@ function AuthFields({
           </select>
           <ChevronDown className="pointer-events-none absolute right-2 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-500" aria-hidden />
         </div>
+      ) : (
+        <p className="text-xs text-zinc-500" aria-label="SSH agent note">
+          Uses your system SSH agent. Load keys from the <span className="text-zinc-400">Key Manager</span> tab.
+        </p>
       )}
     </div>
   );

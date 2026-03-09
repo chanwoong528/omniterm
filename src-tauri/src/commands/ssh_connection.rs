@@ -25,7 +25,15 @@ pub struct EstablishSshConnectionPayload {
 }
 
 fn server_config_to_auth(payload: &ServerConfigPayload) -> Result<ssh::AuthPayload, ssh::SshConnectionError> {
-    let method = if payload.auth_method.eq_ignore_ascii_case("private_key")
+    let method = if payload.auth_method.eq_ignore_ascii_case("agent")
+        || payload.auth_method.eq_ignore_ascii_case("ssh_agent")
+        || payload.auth_method.eq_ignore_ascii_case("sshagent")
+    {
+        ssh::AuthMethod::Agent
+    } else if payload.auth_method.eq_ignore_ascii_case("private_key")
+        || payload.auth_method.eq_ignore_ascii_case("privatekey")
+        || payload.auth_method.eq_ignore_ascii_case("private_key_path")
+        || payload.auth_method.eq_ignore_ascii_case("privatekeypath")
         || payload.auth_method.eq_ignore_ascii_case("privatekey")
     {
         ssh::AuthMethod::PrivateKey
@@ -53,6 +61,7 @@ fn server_config_to_auth(payload: &ServerConfigPayload) -> Result<ssh::AuthPaylo
                 })?;
             ssh::AuthPayload::with_private_key(path)
         }
+        ssh::AuthMethod::Agent => ssh::AuthPayload::with_agent(),
     };
     Ok(auth)
 }

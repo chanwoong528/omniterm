@@ -66,6 +66,9 @@ where
             sess.userauth_pubkey_file(username, None, path, None)
                 .map_err(&into_error)?;
         }
+        crate::ssh::auth::AuthMethod::Agent => {
+            sess.userauth_agent(username).map_err(&into_error)?;
+        }
     }
     if !sess.authenticated() {
         return Err(into_error(ssh2::Error::new(

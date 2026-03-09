@@ -45,7 +45,12 @@ function buildServerPayload(
   config: TargetServerConfig | BastionConfig,
   resolveKeyPath: (id: string) => string | undefined
 ): EstablishConnectionPayload['target'] {
-  const authMethod = config.authMethod === 'private_key' ? 'privateKey' : 'password';
+  const authMethod =
+    config.authMethod === 'private_key'
+      ? 'privateKey'
+      : config.authMethod === 'agent'
+        ? 'agent'
+        : 'password';
   const payload: EstablishConnectionPayload['target'] = {
     host: config.host,
     port: config.port,
@@ -54,7 +59,7 @@ function buildServerPayload(
   };
   if (config.authMethod === 'password') {
     payload.password = config.password;
-  } else {
+  } else if (config.authMethod === 'private_key') {
     payload.privateKeyId = config.privateKeyId;
     if (config.privateKeyId) {
       payload.privateKeyPath = resolveKeyPath(config.privateKeyId);
