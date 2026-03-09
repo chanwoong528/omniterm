@@ -32,11 +32,4 @@ impl ShellWriteManager {
             .map(|tx| tx.send(data).is_ok())
             .unwrap_or(false)
     }
-
-    pub fn remove(&self, session_id: &str) {
-        self.senders
-            .lock()
-            .expect("senders lock")
-            .remove(session_id);
-    }
 }

@@ -1,6 +1,6 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
-import { Server, Key } from 'lucide-react';
+import { Server, Key, ChevronDown, ChevronUp } from 'lucide-react';
 import type { BastionConfig, TargetServerConfig } from '../../domains/session/types';
 import { useEstablishConnection } from '../../domains/session/hooks/useEstablishConnection';
 import { useTerminalStore } from '../../stores/terminalStore';
@@ -25,7 +25,7 @@ const SUCCESS_TOAST_HIDE_MS = 2500;
 
 export function Sidebar({ widthPx }: SidebarProps) {
   const [activeTab, setActiveTab] = useState<SidebarTab>('sessions');
-  const { establishConnection, isConnecting, connectionError } = useEstablishConnection();
+  const { establishConnection, isConnecting, connectionError, connectionLog, clearLog } = useEstablishConnection();
   const addTab = useTerminalStore((s) => s.addTab);
   const upsertSession = useSessionStore((s) => s.upsertSession);
   const markConnected = useSessionStore((s) => s.markConnected);
@@ -70,10 +70,7 @@ export function Sidebar({ widthPx }: SidebarProps) {
         if (bastion.authMethod === 'password') {
           return { ...session.target, authMethod: 'password', password: bastion.password };
         }
-        if (bastion.authMethod === 'private_key') {
-          return { ...session.target, authMethod: 'private_key', privateKeyId: bastion.privateKeyId };
-        }
-        return { ...session.target, authMethod: 'agent' };
+        return { ...session.target, authMethod: 'private_key', privateKeyId: bastion.privateKeyId };
       }
       if (session.target.authMethod === 'password') {
         return { ...session.target, password: targetPassword ?? undefined };
@@ -221,6 +218,9 @@ export function Sidebar({ widthPx }: SidebarProps) {
               {successToastMessage}
             </p>
           )}
+          {connectionLog.length > 0 && (
+            <ConnectionLog lines={connectionLog} isConnecting={isConnecting} onClear={clearLog} />
+          )}
           <SessionForm
             key={activeSavedSessionId ?? 'new'}
             onConnect={handleConnect}
@@ -319,5 +319,85 @@ export function Sidebar({ widthPx }: SidebarProps) {
         </div>
       </div>
     </aside>
+  );
+}
+
+function ConnectionLog({
+  lines,
+  isConnecting,
+  onClear,
+}: {
+  lines: string[];
+  isConnecting: boolean;
+  onClear: () => void;
+}) {
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const [isCollapsed, setIsCollapsed] = useState(false);
+
+  useEffect(() => {
+    if (scrollRef.current && !isCollapsed) {
+      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+    }
+  }, [lines, isCollapsed]);
+
+  useEffect(() => {
+    if (isConnecting) setIsCollapsed(false);
+  }, [isConnecting]);
+
+  const ToggleIcon = isCollapsed ? ChevronDown : ChevronUp;
+
+  return (
+    <div className="overflow-hidden rounded border border-zinc-700 bg-zinc-950/80">
+      <div className="flex items-center justify-between border-b border-zinc-800 px-2 py-1">
+        <button
+          type="button"
+          onClick={() => setIsCollapsed((v) => !v)}
+          className="flex items-center gap-1 text-[10px] font-medium uppercase tracking-wider text-zinc-500 hover:text-zinc-300 focus:outline-none"
+          aria-label={isCollapsed ? 'Expand connection log' : 'Collapse connection log'}
+          aria-expanded={!isCollapsed}
+        >
+          <ToggleIcon className="h-3 w-3" aria-hidden />
+          {isConnecting ? 'Connecting…' : 'Connection Log'}
+        </button>
+        {!isConnecting && (
+          <button
+            type="button"
+            onClick={onClear}
+            className="text-[10px] text-zinc-600 hover:text-zinc-400 focus:outline-none"
+            aria-label="Clear connection log"
+          >
+            Clear
+          </button>
+        )}
+      </div>
+      {!isCollapsed && (
+        <div
+          ref={scrollRef}
+          className="max-h-36 space-y-px overflow-y-auto p-2 font-mono text-[11px] leading-5 text-zinc-400"
+        >
+          {lines.map((line, i) => {
+            const isError = line.startsWith('ERROR');
+            const isSectionHeader = line.startsWith('──');
+            return (
+              <div
+                key={i}
+                className={
+                  isError
+                    ? 'text-red-400'
+                    : isSectionHeader
+                      ? 'pt-1 text-zinc-300 font-semibold'
+                      : ''
+                }
+              >
+                {line}
+              </div>
+            );
+          })}
+          {isConnecting && (
+            <span className="inline-block animate-pulse text-zinc-500">●</span>
+          )}
+        </div>
+      )}
+    </div>
   );
 }

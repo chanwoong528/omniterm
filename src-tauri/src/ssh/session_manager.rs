@@ -1,4 +1,3 @@
-use crate::ssh::error::SshConnectionError;
 use ssh2::Session;
 use std::collections::HashMap;
 use std::sync::Mutex;
@@ -9,7 +8,10 @@ pub struct ActiveSession {
     pub target_session: Session,
     /// Used for SFTP (separate connection to avoid "Would block" with shared session).
     pub sftp_session: Session,
+    /// Kept alive to maintain the bastion tunnel; dropping closes the tunnel.
+    #[allow(dead_code)]
     pub bastion_session: Option<Session>,
+    #[allow(dead_code)]
     pub sftp_bastion_session: Option<Session>,
 }
 
@@ -62,18 +64,4 @@ impl SshSessionManager {
             .map(|s| s.sftp_session.clone())
     }
 
-    pub fn has(&self, id: &str) -> bool {
-        self.sessions
-            .lock()
-            .expect("sessions lock")
-            .contains_key(id)
-    }
-
-    pub fn remove(&self, id: &str) -> Result<(), SshConnectionError> {
-        self.sessions
-            .lock()
-            .expect("sessions lock")
-            .remove(id);
-        Ok(())
-    }
 }

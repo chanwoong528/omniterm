@@ -1,7 +1,7 @@
 use crate::ssh;
 use serde::Deserialize;
 use std::sync::Arc;
-use tauri::State;
+use tauri::{Emitter, State};
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -25,16 +25,10 @@ pub struct EstablishSshConnectionPayload {
 }
 
 fn server_config_to_auth(payload: &ServerConfigPayload) -> Result<ssh::AuthPayload, ssh::SshConnectionError> {
-    let method = if payload.auth_method.eq_ignore_ascii_case("agent")
-        || payload.auth_method.eq_ignore_ascii_case("ssh_agent")
-        || payload.auth_method.eq_ignore_ascii_case("sshagent")
-    {
-        ssh::AuthMethod::Agent
-    } else if payload.auth_method.eq_ignore_ascii_case("private_key")
+    let method = if payload.auth_method.eq_ignore_ascii_case("private_key")
         || payload.auth_method.eq_ignore_ascii_case("privatekey")
         || payload.auth_method.eq_ignore_ascii_case("private_key_path")
         || payload.auth_method.eq_ignore_ascii_case("privatekeypath")
-        || payload.auth_method.eq_ignore_ascii_case("privatekey")
     {
         ssh::AuthMethod::PrivateKey
     } else {
@@ -61,7 +55,6 @@ fn server_config_to_auth(payload: &ServerConfigPayload) -> Result<ssh::AuthPaylo
                 })?;
             ssh::AuthPayload::with_private_key(path)
         }
-        ssh::AuthMethod::Agent => ssh::AuthPayload::with_agent(),
     };
     Ok(auth)
 }
@@ -70,6 +63,7 @@ fn server_config_to_auth(payload: &ServerConfigPayload) -> Result<ssh::AuthPaylo
 pub async fn establish_ssh_connection(
     payload: EstablishSshConnectionPayload,
     manager: State<'_, Arc<ssh::SshSessionManager>>,
+    app: tauri::AppHandle,
 ) -> Result<String, ssh::SshConnectionError> {
     let target_auth = server_config_to_auth(&payload.target)?;
     let use_bastion = payload.use_bastion;
@@ -90,9 +84,15 @@ pub async fn establish_ssh_connection(
     };
 
     let manager = Arc::clone(manager.inner());
+    let app_blocking = app.clone();
 
     let result = tauri::async_runtime::spawn_blocking(move || {
-        // First connection: shell/PTY.
+        let on_progress = |msg: &str| {
+            let _ = app_blocking.emit("ssh-connection-progress", msg.to_string());
+        };
+
+        on_progress("── Establishing shell connection ──");
+
         let (target_session, bastion_session) = if let Some((b_host, b_port, b_user, b_auth)) = bastion_params.clone() {
             let (target_sess, bastion_sess) = ssh::connect_via_bastion(
                 &b_host,
@@ -103,6 +103,7 @@ pub async fn establish_ssh_connection(
                 target_port,
                 &target_username,
                 &target_auth,
+                &on_progress,
             )?;
             (target_sess, Some(bastion_sess))
         } else {
@@ -111,11 +112,14 @@ pub async fn establish_ssh_connection(
                 target_port,
                 &target_username,
                 &target_auth,
+                &on_progress,
             )?;
             (sess, None)
         };
+        on_progress("Shell connection ready");
 
-        // Second connection: SFTP only (avoids "Would block" when shell channel is active).
+        on_progress("── Establishing SFTP connection ──");
+
         let (sftp_session, sftp_bastion) = if let Some((b_host, b_port, b_user, b_auth)) = bastion_params {
             let (target_sess, bastion_sess) = ssh::connect_via_bastion(
                 &b_host,
@@ -126,6 +130,7 @@ pub async fn establish_ssh_connection(
                 target_port,
                 &target_username,
                 &target_auth,
+                &on_progress,
             )?;
             (target_sess, Some(bastion_sess))
         } else {
@@ -134,9 +139,11 @@ pub async fn establish_ssh_connection(
                 target_port,
                 &target_username,
                 &target_auth,
+                &on_progress,
             )?;
             (sess, None)
         };
+        on_progress("SFTP connection ready");
 
         Ok::<_, ssh::SshConnectionError>((
             target_session,
@@ -149,5 +156,6 @@ pub async fn establish_ssh_connection(
     .map_err(|e| ssh::SshConnectionError::TargetConnectionFailed(e.to_string()))??;
 
     let id = manager.register(result.0, result.1, result.2, result.3);
+    let _ = app.emit("ssh-connection-progress", format!("Session registered: {}", &id[..8]));
     Ok(id)
 }

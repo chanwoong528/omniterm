@@ -26,12 +26,17 @@ pub fn connect_via_bastion(
     target_port: u16,
     target_username: &str,
     target_auth: &AuthPayload,
+    on_progress: &dyn Fn(&str),
 ) -> Result<(Session, Session), SshConnectionError> {
+    let bastion_progress = |msg: &str| {
+        on_progress(&format!("[Bastion] {}", msg));
+    };
     let bastion_sess = direct::connect_direct(
         bastion_host,
         bastion_port,
         bastion_username,
         bastion_auth,
+        &bastion_progress,
     )
     .map_err(|e| match e {
         SshConnectionError::TargetConnectionFailed(m) => {
@@ -41,6 +46,10 @@ pub fn connect_via_bastion(
         other => other,
     })?;
 
+    on_progress(&format!(
+        "[Tunnel] Opening direct-tcpip channel to {}:{}...",
+        target_host, target_port
+    ));
     let channel = bastion_sess
         .channel_direct_tcpip(target_host, target_port, None)
         .map_err(|e| {
@@ -49,7 +58,9 @@ pub fn connect_via_bastion(
                 target_host, target_port, e
             ))
         })?;
+    on_progress("[Tunnel] Channel established");
 
+    on_progress("[Tunnel] Setting up local bridge...");
     let (stream_for_session, stream_for_channel) = create_connected_pair()
         .map_err(|e| SshConnectionError::TargetConnectionFailed(e.to_string()))?;
 
@@ -68,9 +79,11 @@ pub fn connect_via_bastion(
     thread::spawn(move || {
         copy_stream_to_channel(stream_reader, channel_for_write);
     });
+    on_progress("[Tunnel] Bridge active");
 
     thread::sleep(Duration::from_millis(50));
 
+    on_progress("[Target] Starting SSH handshake through tunnel...");
     let mut target_sess = Session::new().map_err(|e| {
         SshConnectionError::TargetConnectionFailed(format!("Session::new: {}", e))
     })?;
@@ -78,9 +91,13 @@ pub fn connect_via_bastion(
     target_sess
         .handshake()
         .map_err(|e| SshConnectionError::TargetConnectionFailed(format!("Target handshake: {}", e)))?;
+    on_progress("[Target] Handshake completed");
     target_sess.set_timeout(CONNECT_TIMEOUT_MS);
 
-    direct::authenticate_session(&mut target_sess, target_username, target_auth, |e| {
+    let target_progress = |msg: &str| {
+        on_progress(&format!("[Target] {}", msg));
+    };
+    direct::authenticate_session(&mut target_sess, target_username, target_auth, &target_progress, |e| {
         SshConnectionError::TargetAuthFailed(e.to_string())
     })?;
 

@@ -1,5 +1,5 @@
 /** SSH 인증 방식 */
-export type AuthMethod = 'password' | 'private_key' | 'agent';
+export type AuthMethod = 'password' | 'private_key';
 
 /** Bastion(Jump Host) 서버 설정 */
 export interface BastionConfig {
