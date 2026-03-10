@@ -4,6 +4,7 @@ mod terminal;
 
 use std::sync::Arc;
 use std::time::Duration;
+use tokio::time::sleep;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -17,7 +18,7 @@ pub fn run() {
             let idle_limit = Duration::from_secs(5 * 60);
             loop {
                 // Check every minute.
-                tauri::async_runtime::sleep(Duration::from_secs(60)).await;
+                sleep(Duration::from_secs(60)).await;
                 let _ = ssh_manager_for_cleanup.reap_idle(idle_limit);
             }
         });
