@@ -350,8 +350,12 @@ export function SessionForm({
           keyId={targetKeyId}
           onKeyIdChange={setTargetKeyId}
           registeredKeys={registeredKeys}
-          isDisabled={useBastion && reuseBastionAuth}
         />
+        {useBastion && reuseBastionAuth && (
+          <p className="text-xs text-zinc-500">
+            Target will use the bastion key for this connection. Uncheck &quot;Reuse bastion auth for target&quot; to use the target key above instead.
+          </p>
+        )}
       </fieldset>
 
       {/* Bastion (Jump Host) Toggle */}
