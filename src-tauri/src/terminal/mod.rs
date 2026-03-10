@@ -32,4 +32,14 @@ impl ShellWriteManager {
             .map(|tx| tx.send(data).is_ok())
             .unwrap_or(false)
     }
+
+    /// Removes the sender for a given session id, allowing the shell thread to stop
+    /// once the remote closes or no more data is sent.
+    pub fn remove(&self, session_id: &str) -> bool {
+        self.senders
+            .lock()
+            .expect("senders lock")
+            .remove(session_id)
+            .is_some()
+    }
 }

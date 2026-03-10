@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import type { BastionConfig, TargetServerConfig } from '../types';
@@ -75,6 +75,8 @@ export function useEstablishConnection() {
   const [connectionLog, setConnectionLog] = useState<string[]>([]);
   const [lastConnectedSessionId, setLastConnectedSessionId] = useState<string | null>(null);
   const { registeredKeys } = useKeyManagerStore();
+  const connectRequestIdRef = useRef<number | null>(null);
+  const abortedRequestIdRef = useRef<number | null>(null);
 
   useEffect(() => {
     const unlistenPromise = listen<string>('ssh-connection-progress', (event) => {
@@ -102,6 +104,9 @@ export function useEstablishConnection() {
       useBastion: boolean,
       bastion?: BastionConfig
     ): Promise<string | null> => {
+      const requestId = Date.now();
+      connectRequestIdRef.current = requestId;
+      abortedRequestIdRef.current = null;
       setIsConnecting(true);
       setConnectionError(null);
       setConnectionLog([]);
@@ -116,6 +121,9 @@ export function useEstablishConnection() {
             : undefined,
         };
         const sessionId = await invoke<string>('establish_ssh_connection', { payload });
+        if (abortedRequestIdRef.current === requestId) {
+          return null;
+        }
         setLastConnectedSessionId(sessionId);
         return sessionId;
       } catch (err) {
@@ -124,7 +132,10 @@ export function useEstablishConnection() {
         setConnectionLog((prev) => [...prev, `ERROR: ${errorMsg}`]);
         return null;
       } finally {
-        setIsConnecting(false);
+        if (connectRequestIdRef.current === requestId) {
+          setIsConnecting(false);
+          connectRequestIdRef.current = null;
+        }
       }
     },
     [resolveKeyPath]
@@ -180,6 +191,18 @@ export function useEstablishConnection() {
     [resolveKeyPath]
   );
 
+  const abortConnection = useCallback(() => {
+    const currentRequestId = connectRequestIdRef.current;
+    if (!currentRequestId) {
+      return;
+    }
+    abortedRequestIdRef.current = currentRequestId;
+    connectRequestIdRef.current = null;
+    setIsConnecting(false);
+    setConnectionError('Connection aborted by user.');
+    setConnectionLog((prev) => [...prev, 'ERROR: Connection aborted by user.']);
+  }, []);
+
   return {
     establishConnection,
     testConnection,
@@ -189,5 +212,6 @@ export function useEstablishConnection() {
     connectionLog,
     clearLog,
     lastConnectedSessionId,
+    abortConnection,
   };
 }

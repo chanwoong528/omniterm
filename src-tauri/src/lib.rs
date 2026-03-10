@@ -3,11 +3,25 @@ mod ssh;
 mod terminal;
 
 use std::sync::Arc;
+use std::time::Duration;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let ssh_manager = Arc::new(ssh::SshSessionManager::new());
     let shell_manager = Arc::new(terminal::ShellWriteManager::new());
+
+    // Background task: reap SSH sessions that have been idle for more than 5 minutes.
+    {
+        let ssh_manager_for_cleanup = Arc::clone(&ssh_manager);
+        tauri::async_runtime::spawn(async move {
+            let idle_limit = Duration::from_secs(5 * 60);
+            loop {
+                // Check every minute.
+                tauri::async_runtime::sleep(Duration::from_secs(60)).await;
+                let _ = ssh_manager_for_cleanup.reap_idle(idle_limit);
+            }
+        });
+    }
 
     tauri::Builder::default()
         .manage(ssh_manager)
@@ -20,6 +34,7 @@ pub fn run() {
             commands::system::get_platform,
             commands::terminal::spawn_pty_process,
             commands::terminal::write_to_terminal,
+            commands::terminal::close_ssh_session,
             commands::sftp::read_sftp_directory,
             commands::sftp_upload::upload_sftp_files,
         ])

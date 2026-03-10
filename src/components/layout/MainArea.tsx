@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { invoke } from '@tauri-apps/api/core';
 import { useTerminalStore } from '../../stores/terminalStore';
 import { TerminalView } from '../terminal/TerminalView';
 import { SftpExplorer } from '../../domains/sftp/components/SftpExplorer';
@@ -173,7 +174,9 @@ export function MainArea() {
                         type="button"
                         onClick={(e) => {
                           e.stopPropagation();
-                          removeTab(tab.id);
+                          invoke('close_ssh_session', { sessionId: tab.sessionId }).finally(() => {
+                            removeTab(tab.id);
+                          });
                         }}
                         className="shrink-0 rounded p-0.5 text-zinc-500 hover:bg-zinc-700 hover:text-zinc-300 focus:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400"
                         aria-label={`Close ${tab.title}`}

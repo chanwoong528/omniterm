@@ -149,6 +149,9 @@ pub async fn read_sftp_directory(
     .await
     .map_err(|e| SftpError::ReadFailed(e.to_string()))??;
 
+    // Any SFTP directory read counts as activity.
+    ssh_manager.touch(&session_id);
+
     Ok(result)
 }
 

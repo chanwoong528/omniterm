@@ -25,8 +25,16 @@ const SUCCESS_TOAST_HIDE_MS = 2500;
 
 export function Sidebar({ widthPx }: SidebarProps) {
   const [activeTab, setActiveTab] = useState<SidebarTab>('sessions');
-  const { establishConnection, testConnection, isConnecting, isTesting, connectionError, connectionLog, clearLog } =
-    useEstablishConnection();
+  const {
+    establishConnection,
+    testConnection,
+    isConnecting,
+    isTesting,
+    connectionError,
+    connectionLog,
+    clearLog,
+    abortConnection,
+  } = useEstablishConnection();
   const addTab = useTerminalStore((s) => s.addTab);
   const upsertSession = useSessionStore((s) => s.upsertSession);
   const markConnected = useSessionStore((s) => s.markConnected);
@@ -225,6 +233,7 @@ export function Sidebar({ widthPx }: SidebarProps) {
               isConnecting={isConnecting}
               isTesting={isTesting}
               onClear={clearLog}
+              onAbort={abortConnection}
             />
           )}
           <SessionForm
@@ -337,11 +346,13 @@ function ConnectionLog({
   isConnecting,
   isTesting = false,
   onClear,
+  onAbort,
 }: {
   lines: string[];
   isConnecting: boolean;
   isTesting?: boolean;
   onClear: () => void;
+  onAbort?: () => void;
 }) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const [isCollapsed, setIsCollapsed] = useState(false);
@@ -359,6 +370,12 @@ function ConnectionLog({
 
   const ToggleIcon = isCollapsed ? ChevronDown : ChevronUp;
   const statusLabel = isConnecting ? 'Connecting…' : isTesting ? 'Testing…' : 'Connection Log';
+  const onClickAbort = () => {
+    if (!onAbort) {
+      return;
+    }
+    onAbort();
+  };
 
   return (
     <div className="overflow-hidden rounded border border-zinc-700 bg-zinc-950/80">
@@ -373,7 +390,17 @@ function ConnectionLog({
           <ToggleIcon className="h-3 w-3" aria-hidden />
           {statusLabel}
         </button>
-        {!inProgress && (
+        {inProgress ? (
+          <button
+            type="button"
+            onClick={onClickAbort}
+            disabled={!onAbort}
+            className="text-[10px] text-red-400 hover:text-red-300 disabled:cursor-not-allowed disabled:opacity-60 focus:outline-none"
+            aria-label="Abort current connection attempt"
+          >
+            Abort
+          </button>
+        ) : (
           <button
             type="button"
             onClick={onClear}

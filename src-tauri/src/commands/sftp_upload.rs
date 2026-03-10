@@ -175,6 +175,9 @@ pub async fn upload_sftp_files(
     .await
     .map_err(|e| SftpUploadError::UploadFailed(e.to_string()))??;
 
+    // Upload activity also keeps the session alive.
+    ssh_manager.touch(&session_id);
+
     Ok(results)
 }
 
