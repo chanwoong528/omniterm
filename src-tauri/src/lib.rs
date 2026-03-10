@@ -15,7 +15,9 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .invoke_handler(tauri::generate_handler![
             commands::ssh_connection::establish_ssh_connection,
+            commands::ssh_connection::test_ssh_connection,
             commands::system::get_os_username,
+            commands::system::get_platform,
             commands::terminal::spawn_pty_process,
             commands::terminal::write_to_terminal,
             commands::sftp::read_sftp_directory,

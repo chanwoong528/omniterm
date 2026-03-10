@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import type { AuthMethod, BastionConfig, SavedSession, TargetServerConfig } from '../types';
 import { useKeyManagerStore } from '../../../stores/keyManagerStore';
@@ -8,6 +8,17 @@ import { ChevronDown, Server, Key } from 'lucide-react';
 const DEFAULT_SSH_PORT = 22;
 const DEFAULT_SAVE_ENABLED = true;
 
+/** Bastion example: same hosts/users on all platforms; key path is platform-specific. */
+const BASTION_EXAMPLE_HOSTS = {
+  keyLabel: 'bastion-key',
+  bastionHost: '3.39.6.120',
+  bastionPort: 22,
+  bastionUsername: 'ec2-user',
+  targetHost: '10.0.136.140',
+  targetPort: 22,
+  targetUsername: 'ec2-user',
+} as const;
+
 interface SessionFormProps {
   onConnect: (args: {
     target: TargetServerConfig;
@@ -16,7 +27,13 @@ interface SessionFormProps {
     reuseBastionAuth?: boolean;
     saveSession?: { id: string; label: string } | null;
   }) => void;
+  onTestConnection?: (args: {
+    target: TargetServerConfig;
+    useBastion: boolean;
+    bastion?: BastionConfig;
+  }) => void;
   isConnecting?: boolean;
+  isTesting?: boolean;
 }
 
 function createSessionId(): string {
@@ -31,14 +48,49 @@ function buildDefaultLabel(target: TargetServerConfig): string {
   return host || user || 'Session';
 }
 
-export function SessionForm({ onConnect, isConnecting = false }: SessionFormProps) {
-  const { registeredKeys } = useKeyManagerStore();
+export function SessionForm({
+  onConnect,
+  onTestConnection,
+  isConnecting = false,
+  isTesting = false,
+}: SessionFormProps) {
+  const { registeredKeys, addKey } = useKeyManagerStore();
   const activeSessionId = useSessionStore((s) => s.activeSessionId);
   const getSessionById = useSessionStore((s) => s.getSessionById);
   const selectedSession: SavedSession | undefined = useMemo(() => {
     if (!activeSessionId) return undefined;
     return getSessionById(activeSessionId);
   }, [activeSessionId, getSessionById]);
+
+  const [platform, setPlatform] = useState<string>('darwin');
+  const [osUsername, setOsUsername] = useState<string>('');
+
+  useEffect(() => {
+    const load = async () => {
+      try {
+        const [p, u] = await Promise.all([
+          invoke<string>('get_platform'),
+          invoke<string>('get_os_username'),
+        ]);
+        setPlatform(p ?? 'darwin');
+        setOsUsername(u ?? '');
+      } catch {
+        // keep defaults
+      }
+    };
+    load();
+  }, []);
+
+  const bastionExample = useMemo(() => {
+    const isWindows = platform === 'win32';
+    const keyPath = isWindows
+      ? `C:/Users/${osUsername || 'YourName'}/.ssh/your-key.pem`
+      : '/Users/hankookilbo/Desktop/stuff-key/pem/hk-hrams-bastion-key.pem';
+    return {
+      ...BASTION_EXAMPLE_HOSTS,
+      keyPath,
+    };
+  }, [platform, osUsername]);
 
   const [useBastion, setUseBastion] = useState(() => selectedSession?.useBastion ?? false);
   const [reuseBastionAuth, setReuseBastionAuth] = useState(() => selectedSession?.reuseBastionAuth ?? false);
@@ -135,6 +187,25 @@ export function SessionForm({ onConnect, isConnecting = false }: SessionFormProp
       (bastionAuthMethod === 'private_key' ? bastionKeyId !== '' : true));
   const canSubmit = isTargetFormValid && isBastionFormValid && !isConnecting;
 
+  const effectiveTargetKeyId = useBastion && reuseBastionAuth ? bastionKeyId : targetKeyId;
+  const effectiveTargetAuth = useBastion && reuseBastionAuth ? bastionAuthMethod : targetAuthMethod;
+  const canTest =
+    Boolean(onTestConnection) &&
+    isTargetFormValid &&
+    isBastionFormValid &&
+    !isConnecting &&
+    !isTesting &&
+    effectiveTargetAuth === 'private_key' &&
+    effectiveTargetKeyId !== '' &&
+    (!useBastion || (bastionAuthMethod === 'private_key' && bastionKeyId !== ''));
+
+  const handleTestConnection = () => {
+    if (!canTest || !onTestConnection) return;
+    const target = buildTargetConfig();
+    const bastion = buildBastionConfig();
+    onTestConnection({ target, useBastion, bastion });
+  };
+
   const fillLocalhostTest = async () => {
     setTargetHost('127.0.0.1');
     setTargetPort(22);
@@ -149,6 +220,39 @@ export function SessionForm({ onConnect, isConnecting = false }: SessionFormProp
     }
   };
 
+  const fillBastionExample = () => {
+    const existing = registeredKeys.find(
+      (k) => k.storageKey === bastionExample.keyPath || k.label === bastionExample.keyLabel
+    );
+    const keyId =
+      existing?.id ??
+      (() => {
+        const id = typeof crypto !== 'undefined' && 'randomUUID' in crypto ? crypto.randomUUID() : `key_${Date.now()}`;
+        addKey({
+          id,
+          label: bastionExample.keyLabel,
+          storageKey: bastionExample.keyPath,
+          keyType: '.pem',
+          createdAt: new Date().toISOString(),
+        });
+        return id;
+      })();
+
+    setSessionLabel(`${bastionExample.targetUsername}@${bastionExample.targetHost} (via bastion)`);
+    setTargetHost(bastionExample.targetHost);
+    setTargetPort(bastionExample.targetPort);
+    setTargetUsername(bastionExample.targetUsername);
+    setTargetAuthMethod('private_key');
+    setTargetKeyId(keyId);
+    setUseBastion(true);
+    setReuseBastionAuth(true);
+    setBastionHost(bastionExample.bastionHost);
+    setBastionPort(bastionExample.bastionPort);
+    setBastionUsername(bastionExample.bastionUsername);
+    setBastionAuthMethod('private_key');
+    setBastionKeyId(keyId);
+  };
+
   return (
     <form onSubmit={handleSubmit} className="flex min-w-0 flex-col gap-4">
       <p className="text-xs text-zinc-500">
@@ -161,7 +265,15 @@ export function SessionForm({ onConnect, isConnecting = false }: SessionFormProp
         >
           이 컴퓨터(127.0.0.1)로 채우기
         </button>
-        {' '}(원격 로그인 켜져 있어야 함)
+        {' · '}
+        <button
+            type="button"
+            onClick={fillBastionExample}
+            className="underline hover:text-zinc-300 focus:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400 rounded"
+            aria-label="Fill bastion example (ec2-user@10.0.136.140 via 3.39.6.120)"
+          >
+            {platform === 'win32' ? 'Bastion 예제로 채우기 (Windows)' : 'hk-hrams bastion 예제로 채우기'}
+          </button>
       </p>
 
       <fieldset className="flex min-w-0 flex-col gap-2">
@@ -238,8 +350,12 @@ export function SessionForm({ onConnect, isConnecting = false }: SessionFormProp
           keyId={targetKeyId}
           onKeyIdChange={setTargetKeyId}
           registeredKeys={registeredKeys}
-          isDisabled={useBastion && reuseBastionAuth}
         />
+        {useBastion && reuseBastionAuth && (
+          <p className="text-xs text-zinc-500">
+            Target will use the bastion key for this connection. Uncheck &quot;Reuse bastion auth for target&quot; to use the target key above instead.
+          </p>
+        )}
       </fieldset>
 
       {/* Bastion (Jump Host) Toggle */}
@@ -318,15 +434,29 @@ export function SessionForm({ onConnect, isConnecting = false }: SessionFormProp
         </fieldset>
       )}
 
-      <button
-        type="submit"
-        disabled={!canSubmit}
-        className="flex min-w-0 items-center justify-center gap-2 rounded bg-zinc-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-zinc-500 disabled:cursor-not-allowed disabled:opacity-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400 focus-visible:ring-offset-2 focus-visible:ring-offset-zinc-900"
-        aria-label="Connect to server"
-      >
-        <Server className="h-4 w-4" aria-hidden />
-        {isConnecting ? 'Connecting…' : 'Connect'}
-      </button>
+      <div className="flex min-w-0 flex-wrap items-center gap-2">
+        {onTestConnection && (
+          <button
+            type="button"
+            disabled={!canTest}
+            onClick={handleTestConnection}
+            className="flex min-w-0 items-center justify-center gap-2 rounded border border-zinc-600 bg-zinc-800 px-4 py-2 text-sm font-medium text-zinc-200 transition-colors hover:bg-zinc-700 hover:text-zinc-100 disabled:cursor-not-allowed disabled:opacity-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400 focus-visible:ring-offset-2 focus-visible:ring-offset-zinc-900"
+            aria-label="Test connection using system SSH (private key only)"
+          >
+            <Key className="h-4 w-4" aria-hidden />
+            {isTesting ? 'Testing…' : 'Test connection'}
+          </button>
+        )}
+        <button
+          type="submit"
+          disabled={!canSubmit}
+          className="flex min-w-0 items-center justify-center gap-2 rounded bg-zinc-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-zinc-500 disabled:cursor-not-allowed disabled:opacity-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400 focus-visible:ring-offset-2 focus-visible:ring-offset-zinc-900"
+          aria-label="Connect to server"
+        >
+          <Server className="h-4 w-4" aria-hidden />
+          {isConnecting ? 'Connecting…' : 'Connect'}
+        </button>
+      </div>
     </form>
   );
 }

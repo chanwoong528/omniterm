@@ -1,4 +1,4 @@
-# OmniTerm: 빌드 후 GitHub Release에 DMG/앱 업로드
+# OmniTerm: 빌드 후 GitHub Release에 DMG/앱/Windows 설치 파일 업로드
 # 트리거: v* 태그 푸시, 또는 release 브랜치 푸시, 또는 수동 실행
 name: Release
 
@@ -71,6 +71,6 @@ jobs:
           releaseBody: '다운로드 후 설치해서 사용하세요. macOS Apple Silicon은 macos-aarch64, Intel은 macos-x64, Windows는 windows-x64를 받으세요.'
           releaseDraft: false
           prerelease: false
-          # 릴리스 제목·파일명에 버전 통일 (DMG·app.tar.gz 모두 [name]_[version]_[arch][ext])
+          # 릴리스 제목·파일명에 버전 통일 (DMG·app.tar.gz·msi·exe 모두 [name]_[version]_[arch][ext])
           assetNamePattern: '[name]_[version]_[arch][ext]'
           args: ${{ matrix.args }}

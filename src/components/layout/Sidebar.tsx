@@ -25,7 +25,8 @@ const SUCCESS_TOAST_HIDE_MS = 2500;
 
 export function Sidebar({ widthPx }: SidebarProps) {
   const [activeTab, setActiveTab] = useState<SidebarTab>('sessions');
-  const { establishConnection, isConnecting, connectionError, connectionLog, clearLog } = useEstablishConnection();
+  const { establishConnection, testConnection, isConnecting, isTesting, connectionError, connectionLog, clearLog } =
+    useEstablishConnection();
   const addTab = useTerminalStore((s) => s.addTab);
   const upsertSession = useSessionStore((s) => s.upsertSession);
   const markConnected = useSessionStore((s) => s.markConnected);
@@ -219,12 +220,21 @@ export function Sidebar({ widthPx }: SidebarProps) {
             </p>
           )}
           {connectionLog.length > 0 && (
-            <ConnectionLog lines={connectionLog} isConnecting={isConnecting} onClear={clearLog} />
+            <ConnectionLog
+              lines={connectionLog}
+              isConnecting={isConnecting}
+              isTesting={isTesting}
+              onClear={clearLog}
+            />
           )}
           <SessionForm
             key={activeSavedSessionId ?? 'new'}
             onConnect={handleConnect}
+            onTestConnection={async (args) => {
+              await testConnection(args.target, args.useBastion, args.bastion);
+            }}
             isConnecting={isConnecting}
+            isTesting={isTesting}
           />
           <div className="border-t border-zinc-800 pt-3">
             <h3 className="mb-2 text-xs font-medium uppercase tracking-wide text-zinc-500">
@@ -325,14 +335,17 @@ export function Sidebar({ widthPx }: SidebarProps) {
 function ConnectionLog({
   lines,
   isConnecting,
+  isTesting = false,
   onClear,
 }: {
   lines: string[];
   isConnecting: boolean;
+  isTesting?: boolean;
   onClear: () => void;
 }) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const [isCollapsed, setIsCollapsed] = useState(false);
+  const inProgress = isConnecting || isTesting;
 
   useEffect(() => {
     if (scrollRef.current && !isCollapsed) {
@@ -341,10 +354,11 @@ function ConnectionLog({
   }, [lines, isCollapsed]);
 
   useEffect(() => {
-    if (isConnecting) setIsCollapsed(false);
-  }, [isConnecting]);
+    if (inProgress) setIsCollapsed(false);
+  }, [inProgress]);
 
   const ToggleIcon = isCollapsed ? ChevronDown : ChevronUp;
+  const statusLabel = isConnecting ? 'Connecting…' : isTesting ? 'Testing…' : 'Connection Log';
 
   return (
     <div className="overflow-hidden rounded border border-zinc-700 bg-zinc-950/80">
@@ -357,9 +371,9 @@ function ConnectionLog({
           aria-expanded={!isCollapsed}
         >
           <ToggleIcon className="h-3 w-3" aria-hidden />
-          {isConnecting ? 'Connecting…' : 'Connection Log'}
+          {statusLabel}
         </button>
-        {!isConnecting && (
+        {!inProgress && (
           <button
             type="button"
             onClick={onClear}
@@ -393,7 +407,7 @@ function ConnectionLog({
               </div>
             );
           })}
-          {isConnecting && (
+          {inProgress && (
             <span className="inline-block animate-pulse text-zinc-500">●</span>
           )}
         </div>

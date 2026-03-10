@@ -41,6 +41,11 @@
     "macOS": {
       "entitlements": "Entitlements.plist",
       "bundleName": "OmniTerm"
+    },
+    "windows": {
+      "wix": {
+        "language": ["en-US"]
+      }
     }
   }
 }

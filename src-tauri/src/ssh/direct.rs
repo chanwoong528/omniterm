@@ -2,9 +2,32 @@ use crate::ssh::auth::{AuthMethod, AuthPayload};
 use crate::ssh::error::SshConnectionError;
 use ssh2::Session;
 use std::net::TcpStream;
-use std::path::Path;
+use std::path::PathBuf;
 
 const CONNECT_TIMEOUT_MS: u32 = 15_000;
+
+/// Returns the user's home directory for path expansion (cross-platform).
+fn home_dir() -> Option<PathBuf> {
+    #[cfg(unix)]
+    return std::env::var_os("HOME").map(PathBuf::from);
+    #[cfg(windows)]
+    return std::env::var_os("USERPROFILE").map(PathBuf::from);
+}
+
+/// Expands leading `~` or `~/` to the user's home directory (Key Manager paths).
+/// Works on macOS/Linux (HOME) and Windows (USERPROFILE).
+fn expand_tilde(path: &str) -> PathBuf {
+    let path = path.trim();
+    if path == "~" {
+        return home_dir().unwrap_or_else(|| PathBuf::from(path));
+    }
+    if path.starts_with("~/") {
+        if let Some(home) = home_dir() {
+            return home.join(path.trim_start_matches("~/"));
+        }
+    }
+    PathBuf::from(path)
+}
 
 pub fn connect_direct(
     host: &str,
@@ -72,13 +95,13 @@ where
                 .map_err(&into_error)?;
         }
         AuthMethod::PrivateKey => {
-            let path = auth
+            let path_str = auth
                 .private_key_path
                 .as_deref()
                 .ok_or_else(|| SshConnectionError::InvalidConfig("Private key path required".into()))?;
-            on_progress(&format!("Using key: {}", path));
-            let path = Path::new(path);
-            sess.userauth_pubkey_file(username, None, path, None)
+            on_progress(&format!("Using key: {}", path_str));
+            let path = expand_tilde(path_str);
+            sess.userauth_pubkey_file(username, None, path.as_path(), None)
                 .map_err(&into_error)?;
         }
     }

@@ -1,18 +1,22 @@
 //! Bastion (Jump Host) 터널링: Bastion에 SSH 연결 후 channel_direct_tcpip으로
 //! Target으로 TCP 터널을 열고, 그 터널 위에 Target SSH 세션을 수립합니다.
+//!
+//! libssh2 is not thread-safe: the same session/channel must not be used from
+//! multiple threads. We use a single bridge thread that does both channel→stream
+//! and stream→channel so only one thread touches the channel.
 
 use crate::ssh::auth::AuthPayload;
 use crate::ssh::direct;
 use crate::ssh::error::SshConnectionError;
 use ssh2::{Channel, Session};
-use std::io::{Read, Write};
+use std::io::{ErrorKind, Read, Write};
 use std::net::{TcpListener, TcpStream};
-use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
 
 const CONNECT_TIMEOUT_MS: u32 = 15_000;
 const COPY_BUF_SIZE: usize = 32 * 1024;
+const BRIDGE_STREAM_READ_TIMEOUT_MS: u64 = 50;
 
 /// Bastion을 거쳐 Target SSH 세션을 수립합니다.
 /// 반환: (Target Session, Bastion Session). Bastion Session을 drop하면 터널이 닫히므로
@@ -60,39 +64,44 @@ pub fn connect_via_bastion(
         })?;
     on_progress("[Tunnel] Channel established");
 
+    bastion_sess.set_blocking(false);
+
     on_progress("[Tunnel] Setting up local bridge...");
     let (stream_for_session, stream_for_channel) = create_connected_pair()
         .map_err(|e| SshConnectionError::TargetConnectionFailed(e.to_string()))?;
 
-    let channel = Arc::new(Mutex::new(channel));
-    let channel_for_read = Arc::clone(&channel);
-    let channel_for_write = Arc::clone(&channel);
-
-    let stream_reader = stream_for_channel
-        .try_clone()
+    stream_for_channel
+        .set_read_timeout(Some(Duration::from_millis(BRIDGE_STREAM_READ_TIMEOUT_MS)))
         .map_err(|e| SshConnectionError::TargetConnectionFailed(e.to_string()))?;
-    let stream_writer = stream_for_channel;
+    stream_for_channel
+        .set_write_timeout(Some(Duration::from_millis(CONNECT_TIMEOUT_MS as u64)))
+        .map_err(|e| SshConnectionError::TargetConnectionFailed(e.to_string()))?;
 
     thread::spawn(move || {
-        copy_channel_to_stream(channel_for_read, stream_writer);
-    });
-    thread::spawn(move || {
-        copy_stream_to_channel(stream_reader, channel_for_write);
+        bridge_channel_and_stream(channel, stream_for_channel);
     });
     on_progress("[Tunnel] Bridge active");
 
-    thread::sleep(Duration::from_millis(50));
+    let timeout_duration = Duration::from_millis(CONNECT_TIMEOUT_MS as u64);
+    stream_for_session
+        .set_read_timeout(Some(timeout_duration))
+        .map_err(|e| SshConnectionError::TargetConnectionFailed(e.to_string()))?;
+    stream_for_session
+        .set_write_timeout(Some(timeout_duration))
+        .map_err(|e| SshConnectionError::TargetConnectionFailed(e.to_string()))?;
+
+    thread::sleep(Duration::from_millis(100));
 
     on_progress("[Target] Starting SSH handshake through tunnel...");
     let mut target_sess = Session::new().map_err(|e| {
         SshConnectionError::TargetConnectionFailed(format!("Session::new: {}", e))
     })?;
+    target_sess.set_timeout(CONNECT_TIMEOUT_MS);
     target_sess.set_tcp_stream(stream_for_session);
     target_sess
         .handshake()
         .map_err(|e| SshConnectionError::TargetConnectionFailed(format!("Target handshake: {}", e)))?;
     on_progress("[Target] Handshake completed");
-    target_sess.set_timeout(CONNECT_TIMEOUT_MS);
 
     let target_progress = |msg: &str| {
         on_progress(&format!("[Target] {}", msg));
@@ -112,35 +121,32 @@ fn create_connected_pair() -> std::io::Result<(TcpStream, TcpStream)> {
     Ok((accepted, connector))
 }
 
-fn copy_channel_to_stream(channel: Arc<Mutex<Channel>>, mut stream: TcpStream) {
-    let mut buf = [0u8; COPY_BUF_SIZE];
+/// Single-thread bridge: only this thread touches the channel (libssh2 is not thread-safe).
+/// Each iteration: try channel→stream, then try stream→channel. Non-blocking channel +
+/// short timeout on stream so we don't deadlock.
+fn bridge_channel_and_stream(mut channel: Channel, mut stream: TcpStream) {
+    let mut from_channel = [0u8; COPY_BUF_SIZE];
+    let mut from_stream = [0u8; COPY_BUF_SIZE];
     loop {
-        let n = match channel.lock().ok().and_then(|mut ch| ch.read(&mut buf).ok()) {
-            Some(0) => break,
-            Some(n) => n,
-            None => break,
-        };
-        if stream.write_all(&buf[..n]).is_err() {
-            break;
-        }
-    }
-}
-
-fn copy_stream_to_channel(mut stream: TcpStream, channel: Arc<Mutex<Channel>>) {
-    let mut buf = [0u8; COPY_BUF_SIZE];
-    loop {
-        let n = match stream.read(&mut buf) {
+        match channel.read(&mut from_channel) {
             Ok(0) => break,
-            Ok(n) => n,
+            Ok(n) => {
+                if stream.write_all(&from_channel[..n]).is_err() {
+                    break;
+                }
+            }
+            Err(e) if e.kind() == ErrorKind::WouldBlock => {}
             Err(_) => break,
-        };
-        if channel
-            .lock()
-            .ok()
-            .and_then(|mut ch| ch.write_all(&buf[..n]).err())
-            .is_some()
-        {
-            break;
         }
+        match stream.read(&mut from_stream) {
+            Ok(0) => break,
+            Ok(n) => {
+                if channel.write_all(&from_stream[..n]).is_err() {
+                    break;
+                }
+            }
+            Err(_) => {}
+        }
+        thread::sleep(Duration::from_millis(2));
     }
 }
