@@ -1,7 +1,7 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
-  "productName": "OmniTerm",
-  "version": "0.1.7",
+  "productName": "Omniterm",
+  "version": "0.1.8",
   "identifier": "com.omniterm.app",
   "build": {
     "frontendDist": "../dist",
@@ -12,7 +12,7 @@
   "app": {
     "windows": [
       {
-        "title": "OmniTerm",
+        "title": "Omniterm",
         "width": 1200,
         "height": 760,
         "minWidth": 800,
@@ -40,7 +40,7 @@
     ],
     "macOS": {
       "entitlements": "Entitlements.plist",
-      "bundleName": "OmniTerm"
+      "bundleName": "Omniterm"
     },
     "windows": {
       "wix": {
