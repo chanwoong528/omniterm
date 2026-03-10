@@ -5,8 +5,10 @@ name: Release
 on:
   workflow_dispatch:
   push:
+    # Run when a version tag is pushed (e.g. git push origin v0.1.6 from any branch)
     tags:
       - 'v*'
+    # Or when code is pushed to the release branch
     branches:
       - release
 
@@ -26,6 +28,10 @@ jobs:
             target: x86_64-apple-darwin
             args: --target x86_64-apple-darwin
             name: macos-x64
+          - platform: windows-latest
+            target: x86_64-pc-windows-msvc
+            args: ''
+            name: windows-x64
 
     runs-on: ${{ matrix.platform }}
 
@@ -62,7 +68,7 @@ jobs:
         with:
           tagName: v__VERSION__
           releaseName: 'OmniTerm v__VERSION__'
-          releaseBody: '다운로드 후 설치해서 사용하세요. macOS Apple Silicon은 macos-aarch64, Intel은 macos-x64를 받으세요.'
+          releaseBody: '다운로드 후 설치해서 사용하세요. macOS Apple Silicon은 macos-aarch64, Intel은 macos-x64, Windows는 windows-x64를 받으세요.'
           releaseDraft: false
           prerelease: false
           # 릴리스 제목·파일명에 버전 통일 (DMG·app.tar.gz 모두 [name]_[version]_[arch][ext])
