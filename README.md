@@ -74,6 +74,7 @@ npm run tauri:dev
 | `npm run tauri:build:local` | 로컬 아키텍처만 빌드 (CI 스킵, macOS) |
 | `npm run release:bump` | 버전 bump 후 main 푸시·태그 푸시 (인자: `patch` / `minor` / `major`) |
 | `npm run release:re` | 같은 버전으로 다시 릴리스 (인자: `v0.1.5 -d -y` 등, [docs/RELEASE-STEPS.md](docs/RELEASE-STEPS.md) 참고) |
+| `npm run release:build` | 로컬에서 릴리스 빌드 실행 후 결과물 경로 출력 |
 
 ---
 

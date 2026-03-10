@@ -4,6 +4,11 @@ use ssh2::Session;
 use std::net::TcpStream;
 use std::path::PathBuf;
 
+// Windows runners / networks often need more time for SSH KEX/handshake.
+// Keep a slightly higher timeout on Windows to avoid libssh2 socket send/recv failures during KEX.
+#[cfg(windows)]
+const CONNECT_TIMEOUT_MS: u32 = 60_000;
+#[cfg(not(windows))]
 const CONNECT_TIMEOUT_MS: u32 = 15_000;
 
 /// Returns the user's home directory for path expansion (cross-platform).

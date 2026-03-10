@@ -13,7 +13,8 @@
     "tauri:build": "tauri build",
     "tauri:build:local": "CI=false tauri build",
     "release:bump": "bash scripts/bump-and-release.sh",
-    "release:re": "bash scripts/re-release.sh"
+    "release:re": "bash scripts/re-release.sh",
+    "release:build": "bash scripts/build-release-local.sh"
   },
   "dependencies": {
     "@tauri-apps/api": "^2.10.1",
