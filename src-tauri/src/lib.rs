@@ -3,22 +3,22 @@ mod ssh;
 mod terminal;
 
 use std::sync::Arc;
+use std::thread;
 use std::time::Duration;
-use tokio::time::sleep;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let ssh_manager = Arc::new(ssh::SshSessionManager::new());
     let shell_manager = Arc::new(terminal::ShellWriteManager::new());
 
-    // Background task: reap SSH sessions that have been idle for more than 5 minutes.
+    // Background thread: reap SSH sessions that have been idle for more than 5 minutes.
     {
         let ssh_manager_for_cleanup = Arc::clone(&ssh_manager);
-        tauri::async_runtime::spawn(async move {
+        thread::spawn(move || {
             let idle_limit = Duration::from_secs(5 * 60);
             loop {
                 // Check every minute.
-                sleep(Duration::from_secs(60)).await;
+                thread::sleep(Duration::from_secs(60));
                 let _ = ssh_manager_for_cleanup.reap_idle(idle_limit);
             }
         });
