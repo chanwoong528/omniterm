@@ -1,5 +1,6 @@
 use crate::ssh;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
+use std::process::Command;
 use std::sync::Arc;
 use tauri::{Emitter, State};
 
@@ -158,4 +159,89 @@ pub async fn establish_ssh_connection(
     let id = manager.register(result.0, result.1, result.2, result.3);
     let _ = app.emit("ssh-connection-progress", format!("Session registered: {}", &id[..8]));
     Ok(id)
+}
+
+/// Result of running system `ssh` for connection test (same as CLI: ssh -i key -o ProxyCommand=... user@host echo ok).
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TestSshConnectionResult {
+    pub ok: bool,
+    pub stdout: String,
+    pub stderr: String,
+}
+
+fn is_private_key_auth(payload: &ServerConfigPayload) -> bool {
+    let m = payload.auth_method.to_lowercase();
+    m == "private_key" || m == "privatekey" || m == "private_key_path" || m == "privatekeypath"
+}
+
+#[tauri::command]
+pub async fn test_ssh_connection(
+    payload: EstablishSshConnectionPayload,
+) -> Result<TestSshConnectionResult, String> {
+    if !is_private_key_auth(&payload.target) {
+        return Err("Test connection only supports private key authentication for target.".into());
+    }
+    let key_path = payload
+        .target
+        .private_key_path
+        .as_deref()
+        .or(payload.target.private_key_id.as_deref())
+        .ok_or("Target private key path required for test.")?;
+
+    let target_host = payload.target.host.trim();
+    let target_port = payload.target.port;
+    let target_user = payload.target.username.trim();
+    if target_host.is_empty() || target_user.is_empty() {
+        return Err("Target host and username required.".into());
+    }
+
+    let mut cmd = Command::new("ssh");
+    cmd.arg("-i").arg(key_path);
+    cmd.arg("-o").arg("ConnectTimeout=15");
+    cmd.arg("-o").arg("BatchMode=yes");
+    cmd.arg("-o").arg("StrictHostKeyChecking=accept-new");
+    cmd.arg("-p").arg(target_port.to_string());
+    if payload.use_bastion {
+        let b = payload
+            .bastion
+            .as_ref()
+            .ok_or("Bastion config required when use_bastion is true.")?;
+        if !is_private_key_auth(b) {
+            return Err("Test connection only supports private key authentication for bastion.".into());
+        }
+        let bastion_key = b
+            .private_key_path
+            .as_deref()
+            .or(b.private_key_id.as_deref())
+            .ok_or("Bastion private key path required for test.")?;
+        let b_host = b.host.trim();
+        let b_port = b.port;
+        let b_user = b.username.trim();
+        if b_host.is_empty() || b_user.is_empty() {
+            return Err("Bastion host and username required.".into());
+        }
+        let proxy_cmd = if b_port == 22 {
+            format!(
+                "ssh -W %h:%p -i {} {}@{}",
+                bastion_key, b_user, b_host
+            )
+        } else {
+            format!(
+                "ssh -W %h:%p -i {} -p {} {}@{}",
+                bastion_key, b_port, b_user, b_host
+            )
+        };
+        cmd.arg("-o").arg(format!("ProxyCommand={}", proxy_cmd));
+    }
+    cmd.arg(format!("{}@{}", target_user, target_host));
+    cmd.arg("echo");
+    cmd.arg("ok");
+
+    let output = cmd.output().map_err(|e| format!("Failed to run ssh: {}", e))?;
+    let stdout = String::from_utf8_lossy(&output.stdout).into_owned();
+    let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
+    let ok = output.status.success();
+
+    Ok(TestSshConnectionResult { ok, stdout, stderr })
 }

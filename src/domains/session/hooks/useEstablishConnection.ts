@@ -56,11 +56,15 @@ function buildServerPayload(
   };
   if (config.authMethod === 'password') {
     payload.password = config.password;
-  } else if (config.authMethod === 'private_key') {
-    payload.privateKeyId = config.privateKeyId;
-    if (config.privateKeyId) {
-      payload.privateKeyPath = resolveKeyPath(config.privateKeyId);
+  } else if (config.authMethod === 'private_key' && config.privateKeyId) {
+    const resolvedPath = resolveKeyPath(config.privateKeyId);
+    if (!resolvedPath) {
+      throw new Error(
+        'Selected key not found in Key Manager. Re-add the key or choose another.'
+      );
     }
+    payload.privateKeyId = config.privateKeyId;
+    payload.privateKeyPath = resolvedPath;
   }
   return payload;
 }
@@ -126,9 +130,61 @@ export function useEstablishConnection() {
     [resolveKeyPath]
   );
 
+  const [isTesting, setIsTesting] = useState(false);
+
+  const testConnection = useCallback(
+    async (
+      target: TargetServerConfig,
+      useBastion: boolean,
+      bastion?: BastionConfig
+    ): Promise<{ ok: boolean; stdout: string; stderr: string }> => {
+      setIsTesting(true);
+      setConnectionError(null);
+      try {
+        const targetPayload = buildServerPayload(target, resolveKeyPath);
+        const payload: EstablishConnectionPayload = {
+          target: targetPayload,
+          useBastion,
+          bastion: useBastion && bastion
+            ? buildServerPayload(bastion, resolveKeyPath)
+            : undefined,
+        };
+        const result = await invoke<{ ok: boolean; stdout: string; stderr: string }>(
+          'test_ssh_connection',
+          { payload }
+        );
+        const logLines = [
+          '── Test connection (system ssh) ──',
+          result.stdout.trim() || '(no stdout)',
+          result.stderr.trim() || '(no stderr)',
+          result.ok ? 'OK: Connection test passed.' : 'FAILED: Connection test failed.',
+        ];
+        setConnectionLog((prev) => [...prev, ...logLines]);
+        if (!result.ok) {
+          setConnectionError(result.stderr.trim() || result.stdout.trim() || 'Test failed.');
+        }
+        return result;
+      } catch (err) {
+        const errorMsg = getConnectionErrorMessage(err);
+        setConnectionError(errorMsg);
+        setConnectionLog((prev) => [
+          ...prev,
+          '── Test connection (system ssh) ──',
+          `ERROR: ${errorMsg}`,
+        ]);
+        return { ok: false, stdout: '', stderr: errorMsg };
+      } finally {
+        setIsTesting(false);
+      }
+    },
+    [resolveKeyPath]
+  );
+
   return {
     establishConnection,
+    testConnection,
     isConnecting,
+    isTesting,
     connectionError,
     connectionLog,
     clearLog,
