@@ -74,7 +74,7 @@ export function TitleBar() {
         data-tauri-drag-region
         className="flex flex-1 items-center justify-center text-sm font-medium text-zinc-400"
       >
-        OmniTerm
+        Omniterm
       </div>
 
       {/* Spacer for balance */}
