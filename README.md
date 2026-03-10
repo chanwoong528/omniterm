@@ -60,6 +60,23 @@ npm run tauri:dev
 
 ---
 
+## 주요 npm 스크립트
+
+| 스크립트 | 설명 |
+|----------|------|
+| `npm run dev` | Vite 개발 서버만 실행 |
+| `npm run build` | TypeScript 빌드 + Vite 빌드 |
+| `npm run lint` | ESLint 실행 |
+| `npm run preview` | Vite 프리뷰 서버 |
+| `npm run tauri` | Tauri CLI 직접 호출 |
+| `npm run tauri:dev` | Tauri 앱 개발 모드 (프론트+백엔드) |
+| `npm run tauri:build` | Tauri 프로덕션 빌드 |
+| `npm run tauri:build:local` | 로컬 아키텍처만 빌드 (CI 스킵, macOS) |
+| `npm run release:bump` | 버전 bump 후 main 푸시·태그 푸시 (인자: `patch` / `minor` / `major`) |
+| `npm run release:re` | 같은 버전으로 다시 릴리스 (인자: `v0.1.5 -d -y` 등, [docs/RELEASE-STEPS.md](docs/RELEASE-STEPS.md) 참고) |
+
+---
+
 ## 로컬에서 빌드 (설치용 파일 만들기)
 
 **macOS – 본인 Mac과 같은 아키텍처만** 빌드할 때:

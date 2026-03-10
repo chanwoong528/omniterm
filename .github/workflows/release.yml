@@ -1,5 +1,6 @@
 # OmniTerm: 빌드 후 GitHub Release에 DMG/앱/Windows 설치 파일 업로드
 # 트리거: v* 태그 푸시, 또는 release 브랜치 푸시, 또는 수동 실행
+# 태그 푸시 시, 커밋 메시지에 [skip release]가 있으면 빌드·릴리스 생성을 건너뜀 (bump-and-release / re-release 스크립트용)
 name: Release
 
 on:
@@ -13,7 +14,32 @@ on:
       - release
 
 jobs:
+  check:
+    runs-on: ubuntu-latest
+    outputs:
+      run_build: ${{ steps.set_run_build.outputs.run_build }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref }}
+
+      - id: set_run_build
+        run: |
+          if [[ "${{ github.ref }}" == refs/tags/* ]]; then
+            MSG=$(git log -1 --format=%B)
+            if echo "$MSG" | grep -q '\[skip release\]'; then
+              echo "run_build=false" >> "$GITHUB_OUTPUT"
+              echo "Tagged commit has [skip release]; skipping Release build."
+            else
+              echo "run_build=true" >> "$GITHUB_OUTPUT"
+            fi
+          else
+            echo "run_build=true" >> "$GITHUB_OUTPUT"
+          fi
+
   build:
+    needs: check
+    if: needs.check.outputs.run_build == 'true'
     permissions:
       contents: write
     strategy:
@@ -65,6 +91,8 @@ jobs:
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Skip AppleScript DMG styling in CI to avoid bundle_dmg.sh failures (timeout / Finder auth)
+          TAURI_BUNDLER_DMG_IGNORE_CI: false
         with:
           tagName: v__VERSION__
           releaseName: 'OmniTerm v__VERSION__'

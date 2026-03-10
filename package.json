@@ -11,7 +11,9 @@
     "tauri": "tauri",
     "tauri:dev": "tauri dev",
     "tauri:build": "tauri build",
-    "tauri:build:local": "CI=false tauri build"
+    "tauri:build:local": "CI=false tauri build",
+    "release:bump": "bash scripts/bump-and-release.sh",
+    "release:re": "bash scripts/re-release.sh"
   },
   "dependencies": {
     "@tauri-apps/api": "^2.10.1",
