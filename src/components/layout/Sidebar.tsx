@@ -1,5 +1,4 @@
 import { useEffect, useRef, useState } from 'react';
-import { invoke } from '@tauri-apps/api/core';
 import { Server, Key, ChevronDown, ChevronUp } from 'lucide-react';
 import type { BastionConfig, TargetServerConfig } from '../../domains/session/types';
 import { useEstablishConnection } from '../../domains/session/hooks/useEstablishConnection';
@@ -23,6 +22,11 @@ interface SidebarProps {
 
 const SUCCESS_TOAST_HIDE_MS = 2500;
 
+function generateSavedSessionId(): string {
+  if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) return crypto.randomUUID();
+  return `sess_${Date.now()}_${Math.random().toString(16).slice(2)}`;
+}
+
 export function Sidebar({ widthPx }: SidebarProps) {
   const [activeTab, setActiveTab] = useState<SidebarTab>('sessions');
   const {
@@ -36,8 +40,10 @@ export function Sidebar({ widthPx }: SidebarProps) {
     abortConnection,
   } = useEstablishConnection();
   const addTab = useTerminalStore((s) => s.addTab);
+  const savedSessions = useSessionStore((s) => s.savedSessions);
   const upsertSession = useSessionStore((s) => s.upsertSession);
   const markConnected = useSessionStore((s) => s.markConnected);
+  const setActiveSessionId = useSessionStore((s) => s.setActiveSessionId);
   const activeSavedSessionId = useSessionStore((s) => s.activeSessionId);
 
   const [successToastMessage, setSuccessToastMessage] = useState<string | null>(null);
@@ -53,6 +59,14 @@ export function Sidebar({ widthPx }: SidebarProps) {
       successToastTimeoutRef.current = null;
     }, SUCCESS_TOAST_HIDE_MS);
   };
+
+  useEffect(() => {
+    return () => {
+      if (successToastTimeoutRef.current !== null) {
+        window.clearTimeout(successToastTimeoutRef.current);
+      }
+    };
+  }, []);
 
   /** When set, show in-app password form for this saved session (window.prompt doesn't work in Tauri webview). */
   const [passwordPromptSession, setPasswordPromptSession] = useState<SavedSession | null>(null);
@@ -88,13 +102,15 @@ export function Sidebar({ widthPx }: SidebarProps) {
     })();
 
     const runtimeSessionId = await establishConnection(target, session.useBastion, bastion);
-    if (!runtimeSessionId) return;
+    if (!runtimeSessionId) return false;
 
+    // The shell (spawn_pty_process) is started by TerminalView after its
+    // output listener is registered, so the first prompt is never lost.
     const title = `${target.username}@${target.host}`;
     addTab(runtimeSessionId, title);
-    invoke('spawn_pty_process', { sessionId: runtimeSessionId }).catch(() => {});
     markConnected(session.id);
     showSuccessToast('연결됨. 터미널 탭이 열렸습니다.');
+    return true;
   };
 
   const connectSavedSession = async (session: SavedSession) => {
@@ -128,54 +144,86 @@ export function Sidebar({ widthPx }: SidebarProps) {
     if (needsTarget && !passwordPromptTargetPassword.trim()) return;
     if (needsBastion && !passwordPromptBastionPassword.trim()) return;
 
-    await runConnectWithSession(
+    const connected = await runConnectWithSession(
       session,
       needsTarget ? passwordPromptTargetPassword : undefined,
       needsBastion ? passwordPromptBastionPassword : undefined
     );
+    // Keep the form open on failure so a typo doesn't force re-selecting the
+    // session and retyping everything; the error shows above via connectionError.
+    if (!connected) return;
     setPasswordPromptSession(null);
     setPasswordPromptTargetPassword('');
     setPasswordPromptBastionPassword('');
   };
+
+  /** Finds a saved session with the same target/bastion endpoints, so
+   *  reconnecting to a known server updates it instead of duplicating it. */
+  const findMatchingSavedSession = (
+    target: TargetServerConfig,
+    useBastion: boolean,
+    bastion?: BastionConfig
+  ): SavedSession | undefined =>
+    savedSessions.find((s) => {
+      const sameTarget =
+        s.target.host === target.host &&
+        s.target.port === target.port &&
+        s.target.username === target.username;
+      if (!sameTarget || s.useBastion !== useBastion) return false;
+      if (!useBastion) return true;
+      return (
+        s.bastion?.host === bastion?.host &&
+        s.bastion?.port === bastion?.port &&
+        s.bastion?.username === bastion?.username
+      );
+    });
 
   const handleConnect = async (args: {
     target: TargetServerConfig;
     useBastion: boolean;
     bastion?: BastionConfig;
     reuseBastionAuth?: boolean;
-    saveSession?: { id: string; label: string } | null;
+    saveSession?: { id?: string; label: string } | null;
   }) => {
+    if (isConnecting) return;
+
+    // Auto-save at connect time (passwords excluded) — a failed attempt still
+    // keeps the configuration for retry.
+    const sanitizeTarget: TargetServerConfig =
+      args.target.authMethod === 'password' ? { ...args.target, password: undefined } : { ...args.target };
+    const sanitizeBastion: BastionConfig | undefined =
+      args.useBastion && args.bastion
+        ? args.bastion.authMethod === 'password'
+          ? { ...args.bastion, password: undefined }
+          : { ...args.bastion }
+        : undefined;
+    // The id is decided by ENDPOINT match only: the same target/bastion
+    // updates its existing entry; anything else becomes a NEW entry. The
+    // form's selected-session id must not be reused here — the form stays
+    // bound to the last-connected session, and editing it to point at a
+    // different server would otherwise overwrite that entry in place.
+    const existing = findMatchingSavedSession(args.target, args.useBastion, args.bastion);
+    const saved: SavedSession = {
+      id: existing?.id ?? generateSavedSessionId(),
+      label:
+        args.saveSession?.label.trim() ||
+        existing?.label ||
+        `${args.target.username}@${args.target.host}`,
+      target: sanitizeTarget,
+      useBastion: args.useBastion,
+      bastion: sanitizeBastion,
+      reuseBastionAuth: args.reuseBastionAuth ?? false,
+      lastConnectedAt: existing?.lastConnectedAt,
+    };
+    upsertSession(saved);
+
     const sessionId = await establishConnection(args.target, args.useBastion, args.bastion);
     if (sessionId) {
       const title = `${args.target.username}@${args.target.host}`;
       addTab(sessionId, title);
-      invoke('spawn_pty_process', { sessionId }).catch(() => {
-        // Error already shown via terminal-output event or user can retry
-      });
-      showSuccessToast('연결됨. 터미널 탭이 열렸습니다.');
-
-      if (args.saveSession) {
-        const sanitizeTarget: TargetServerConfig =
-          args.target.authMethod === 'password' ? { ...args.target, password: undefined } : { ...args.target };
-        const sanitizeBastion: BastionConfig | undefined =
-          args.useBastion && args.bastion
-            ? args.bastion.authMethod === 'password'
-              ? { ...args.bastion, password: undefined }
-              : { ...args.bastion }
-            : undefined;
-
-        const saved: SavedSession = {
-          id: args.saveSession.id,
-          label: args.saveSession.label,
-          target: sanitizeTarget,
-          useBastion: args.useBastion,
-          bastion: sanitizeBastion,
-          reuseBastionAuth: args.reuseBastionAuth ?? false,
-          lastConnectedAt: new Date().toISOString(),
-        };
-        upsertSession(saved);
-        markConnected(saved.id);
-      }
+      showSuccessToast('연결됨. 세션이 자동 저장되었습니다.');
+      markConnected(saved.id);
+      setActiveSessionId(saved.id);
     }
   };
 
@@ -358,15 +406,19 @@ function ConnectionLog({
   const [isCollapsed, setIsCollapsed] = useState(false);
   const inProgress = isConnecting || isTesting;
 
+  // Auto-expand when a connection starts — adjust state during render
+  // instead of via an effect (avoids a cascading re-render).
+  const [prevInProgress, setPrevInProgress] = useState(inProgress);
+  if (prevInProgress !== inProgress) {
+    setPrevInProgress(inProgress);
+    if (inProgress) setIsCollapsed(false);
+  }
+
   useEffect(() => {
     if (scrollRef.current && !isCollapsed) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
   }, [lines, isCollapsed]);
-
-  useEffect(() => {
-    if (inProgress) setIsCollapsed(false);
-  }, [inProgress]);
 
   const ToggleIcon = isCollapsed ? ChevronDown : ChevronUp;
   const statusLabel = isConnecting ? 'Connecting…' : isTesting ? 'Testing…' : 'Connection Log';

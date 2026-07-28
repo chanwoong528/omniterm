@@ -12,23 +12,24 @@ interface TerminalState {
   addTab: (sessionId: string, title: string) => string;
   setActiveTab: (id: string | null) => void;
   removeTab: (id: string) => void;
-  getTabBySessionId: (sessionId: string) => TerminalTab | undefined;
 }
 
 function generateTabId(): string {
   return `tab-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
 }
 
-export const useTerminalStore = create<TerminalState>((set, get) => ({
+export const useTerminalStore = create<TerminalState>((set) => ({
   tabs: [],
   activeTabId: null,
 
   addTab: (sessionId: string, title: string) => {
     const id = generateTabId();
     const tab: TerminalTab = { id, sessionId, title };
+    // A newly opened tab always becomes active — connecting to a second
+    // server must switch the view to it.
     set((state) => ({
       tabs: [...state.tabs, tab],
-      activeTabId: state.tabs.length === 0 ? id : state.activeTabId ?? id,
+      activeTabId: id,
     }));
     return id;
   },
@@ -44,7 +45,4 @@ export const useTerminalStore = create<TerminalState>((set, get) => ({
           : state.activeTabId;
       return { tabs: next, activeTabId };
     }),
-
-  getTabBySessionId: (sessionId) =>
-    get().tabs.find((t) => t.sessionId === sessionId),
 }));

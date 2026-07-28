@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
 
 const HANDLE_WIDTH_PX = 6;
 
@@ -15,50 +15,54 @@ export function ResizeHandle({
   sidebarWidthPx,
   onSidebarWidthChange,
 }: ResizeHandleProps) {
-  const [isDragging, setIsDragging] = useState(false);
-  const startXRef = useRef(0);
-  const startWidthRef = useRef(0);
+  const dragStateRef = useRef<{ startX: number; startWidth: number } | null>(null);
+  const rafRef = useRef<number | null>(null);
 
   const clampWidth = useCallback((value: number) => {
     return Math.min(SIDEBAR_MAX_PX, Math.max(SIDEBAR_MIN_PX, value));
   }, []);
 
-  const onMouseDown = useCallback(
-    (e: React.MouseEvent) => {
+  // Pointer-capture drag: keeps receiving moves outside the window and ends
+  // reliably on pointerup/pointercancel, so the drag can never get stuck.
+  const onPointerDown = useCallback(
+    (e: React.PointerEvent<HTMLDivElement>) => {
       if (e.button !== 0) return;
       e.preventDefault();
-      startXRef.current = e.clientX;
-      startWidthRef.current = sidebarWidthPx;
-      setIsDragging(true);
+      e.currentTarget.setPointerCapture(e.pointerId);
+      dragStateRef.current = { startX: e.clientX, startWidth: sidebarWidthPx };
+      document.body.style.cursor = 'col-resize';
+      document.body.style.userSelect = 'none';
     },
     [sidebarWidthPx]
   );
 
+  const onPointerMove = useCallback(
+    (e: React.PointerEvent<HTMLDivElement>) => {
+      const drag = dragStateRef.current;
+      if (!drag) return;
+      const next = clampWidth(drag.startWidth + (e.clientX - drag.startX));
+      if (rafRef.current !== null) cancelAnimationFrame(rafRef.current);
+      rafRef.current = requestAnimationFrame(() => {
+        onSidebarWidthChange(next);
+        rafRef.current = null;
+      });
+    },
+    [clampWidth, onSidebarWidthChange]
+  );
+
+  const onPointerEnd = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
+    if (!dragStateRef.current) return;
+    dragStateRef.current = null;
+    e.currentTarget.releasePointerCapture(e.pointerId);
+    document.body.style.cursor = '';
+    document.body.style.userSelect = '';
+  }, []);
+
   useEffect(() => {
-    if (!isDragging) return;
-
-    const onMouseMove = (e: MouseEvent) => {
-      const delta = e.clientX - startXRef.current;
-      const newWidth = clampWidth(startWidthRef.current + delta);
-      onSidebarWidthChange(newWidth);
-    };
-
-    const onMouseUp = () => {
-      setIsDragging(false);
-    };
-
-    document.addEventListener('mousemove', onMouseMove, { capture: true });
-    document.addEventListener('mouseup', onMouseUp, { capture: true });
-    document.body.style.cursor = 'col-resize';
-    document.body.style.userSelect = 'none';
-
     return () => {
-      document.removeEventListener('mousemove', onMouseMove, { capture: true });
-      document.removeEventListener('mouseup', onMouseUp, { capture: true });
-      document.body.style.cursor = '';
-      document.body.style.userSelect = '';
+      if (rafRef.current !== null) cancelAnimationFrame(rafRef.current);
     };
-  }, [isDragging, clampWidth, onSidebarWidthChange]);
+  }, []);
 
   return (
     <div
@@ -69,7 +73,10 @@ export function ResizeHandle({
       aria-valuemax={SIDEBAR_MAX_PX}
       aria-label="Resize sidebar"
       tabIndex={0}
-      onMouseDown={onMouseDown}
+      onPointerDown={onPointerDown}
+      onPointerMove={onPointerMove}
+      onPointerUp={onPointerEnd}
+      onPointerCancel={onPointerEnd}
       onKeyDown={(e) => {
         const step = 16;
         if (e.key === 'ArrowLeft') {

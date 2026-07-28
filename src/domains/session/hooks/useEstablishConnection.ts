@@ -73,7 +73,6 @@ export function useEstablishConnection() {
   const [isConnecting, setIsConnecting] = useState(false);
   const [connectionError, setConnectionError] = useState<string | null>(null);
   const [connectionLog, setConnectionLog] = useState<string[]>([]);
-  const [lastConnectedSessionId, setLastConnectedSessionId] = useState<string | null>(null);
   const { registeredKeys } = useKeyManagerStore();
   const connectRequestIdRef = useRef<number | null>(null);
   const abortedRequestIdRef = useRef<number | null>(null);
@@ -110,7 +109,6 @@ export function useEstablishConnection() {
       setIsConnecting(true);
       setConnectionError(null);
       setConnectionLog([]);
-      setLastConnectedSessionId(null);
       try {
         const targetPayload = buildServerPayload(target, resolveKeyPath);
         const payload: EstablishConnectionPayload = {
@@ -122,9 +120,11 @@ export function useEstablishConnection() {
         };
         const sessionId = await invoke<string>('establish_ssh_connection', { payload });
         if (abortedRequestIdRef.current === requestId) {
+          // The backend kept connecting after the user aborted; close the
+          // now-orphaned session instead of leaking it with no UI handle.
+          void invoke('close_ssh_session', { sessionId }).catch(() => {});
           return null;
         }
-        setLastConnectedSessionId(sessionId);
         return sessionId;
       } catch (err) {
         const errorMsg = getConnectionErrorMessage(err);
@@ -211,7 +211,6 @@ export function useEstablishConnection() {
     connectionError,
     connectionLog,
     clearLog,
-    lastConnectedSessionId,
     abortConnection,
   };
 }

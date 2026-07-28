@@ -1,8 +1,9 @@
+use crate::commands::sftp::{expand_remote_path, join_remote};
 use crate::ssh;
 use serde::Serialize;
 use std::fs::File;
-use std::io;
-use std::path::{Path, PathBuf};
+use std::io::{self, Write};
+use std::path::PathBuf;
 use std::sync::Arc;
 use tauri::State;
 
@@ -35,33 +36,6 @@ pub struct UploadResult {
     pub message: Option<String>,
 }
 
-fn resolve_remote_dir(sftp: &ssh2::Sftp, input: &str) -> Result<String, SftpUploadError> {
-    let trimmed = input.trim();
-    if trimmed.is_empty() {
-        return Err(SftpUploadError::InvalidPath(
-            "Remote directory is required".into(),
-        ));
-    }
-    let path = Path::new(trimmed);
-    if path == Path::new("~") || path == Path::new(".") {
-        let resolved = sftp
-            .realpath(Path::new("~"))
-            .or_else(|_| sftp.realpath(Path::new(".")))
-            .map_err(|e| SftpUploadError::InvalidPath(e.to_string()))?;
-        return Ok(resolved.to_string_lossy().into_owned());
-    }
-    Ok(trimmed.to_string())
-}
-
-fn join_remote_path(remote_dir: &str, file_name: &str) -> String {
-    let file_name = file_name.replace('/', "");
-    if remote_dir.ends_with('/') {
-        format!("{}{}", remote_dir, file_name)
-    } else {
-        format!("{}/{}", remote_dir, file_name)
-    }
-}
-
 #[tauri::command]
 pub async fn upload_sftp_files(
     session_id: String,
@@ -75,18 +49,24 @@ pub async fn upload_sftp_files(
         ));
     }
 
-    let session = ssh_manager
-        .get_sftp_session(&session_id)
-        .ok_or_else(|| SftpUploadError::InvalidSession("Session not found".into()))?;
+    let sftp_handle = ssh_manager
+        .get_or_init_sftp(&session_id)
+        .map_err(SftpUploadError::InvalidSession)?;
+    let username = ssh_manager.get_username(&session_id).unwrap_or_default();
+    let manager = Arc::clone(ssh_manager.inner());
+    let session_id_for_touch = session_id.clone();
 
     let results = tauri::async_runtime::spawn_blocking(move || {
-        let sftp = session
-            .sftp()
-            .map_err(|e| SftpUploadError::UploadFailed(e.to_string()))?;
-        let resolved_remote_dir = resolve_remote_dir(&sftp, &remote_dir)?;
+        let sftp = sftp_handle.lock().unwrap_or_else(|e| e.into_inner());
+        let resolved_remote_dir = expand_remote_path(&sftp, &username, &remote_dir)
+            .map_err(SftpUploadError::InvalidPath)?;
 
         let mut output: Vec<UploadResult> = Vec::with_capacity(local_paths.len());
         for local_path in local_paths {
+            // Long batches must count as activity while in flight, not only at
+            // the end — otherwise the idle reaper kills the session mid-upload.
+            manager.touch(&session_id_for_touch);
+
             let local_path_buf = PathBuf::from(&local_path);
             let file_name = match local_path_buf.file_name().and_then(|n| n.to_str()) {
                 Some(n) if !n.is_empty() => n.to_string(),
@@ -137,10 +117,9 @@ pub async fn upload_sftp_files(
                 }
             };
 
-            let remote_path = join_remote_path(&resolved_remote_dir, &file_name);
-            let remote_path_buf = Path::new(&remote_path);
+            let remote_path = join_remote(&resolved_remote_dir, &file_name);
 
-            let mut remote_file = match sftp.create(remote_path_buf) {
+            let mut remote_file = match sftp.create(std::path::Path::new(&remote_path)) {
                 Ok(f) => f,
                 Err(e) => {
                     output.push(UploadResult {
@@ -153,13 +132,27 @@ pub async fn upload_sftp_files(
                 }
             };
 
-            let copied = io::copy(&mut input_file, &mut remote_file);
-            match copied {
-                Ok(_) => output.push(UploadResult {
+            // Verify the copy fully flushed and wrote the expected byte count;
+            // ssh2::File's Drop swallows close errors, so success must not be
+            // reported on io::copy alone.
+            let copy_result = io::copy(&mut input_file, &mut remote_file)
+                .and_then(|copied| remote_file.flush().map(|_| copied));
+            match copy_result {
+                Ok(copied) if copied == meta.len() => output.push(UploadResult {
                     local_path,
                     remote_path: Some(remote_path),
                     ok: true,
                     message: None,
+                }),
+                Ok(copied) => output.push(UploadResult {
+                    local_path,
+                    remote_path: Some(remote_path),
+                    ok: false,
+                    message: Some(format!(
+                        "Incomplete upload: wrote {} of {} bytes",
+                        copied,
+                        meta.len()
+                    )),
                 }),
                 Err(e) => output.push(UploadResult {
                     local_path,
@@ -175,9 +168,7 @@ pub async fn upload_sftp_files(
     .await
     .map_err(|e| SftpUploadError::UploadFailed(e.to_string()))??;
 
-    // Upload activity also keeps the session alive.
     ssh_manager.touch(&session_id);
 
     Ok(results)
 }
-

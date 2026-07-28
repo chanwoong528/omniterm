@@ -2,7 +2,7 @@ import { useCallback, useState } from 'react';
 import { Key, Plus, Trash2 } from 'lucide-react';
 import { useKeyManagerStore } from '../../../stores/keyManagerStore';
 import type { RegisteredKeyMeta } from '../types';
-import { open } from '@tauri-apps/plugin-dialog';
+import { ask, open } from '@tauri-apps/plugin-dialog';
 
 function KeyListItem({
   keyMeta,
@@ -178,7 +178,14 @@ export function KeyManagerPanel() {
             <li key={keyMeta.id}>
               <KeyListItem
                 keyMeta={keyMeta}
-                onRemove={() => removeKey(keyMeta.id)}
+                onRemove={() => {
+                  void ask(`등록된 키를 삭제할까요?\n${keyMeta.label}`, {
+                    title: 'Delete key',
+                    kind: 'warning',
+                  }).then((confirmed) => {
+                    if (confirmed) removeKey(keyMeta.id);
+                  });
+                }}
               />
             </li>
           ))}

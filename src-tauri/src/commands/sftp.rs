@@ -1,9 +1,16 @@
 use crate::ssh;
-use libc::{S_IFDIR, S_IFMT};
 use serde::Serialize;
+use ssh2::Sftp;
 use std::path::Path;
 use std::sync::Arc;
 use tauri::State;
+
+// SFTP protocol file-mode bits. These are POSIX wire values defined by the
+// protocol itself, independent of the client OS (libc's constants differ on
+// Windows, so they must not be used here).
+const S_IFMT: u32 = 0o170000;
+const S_IFDIR: u32 = 0o040000;
+const S_IFLNK: u32 = 0o120000;
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(tag = "kind", content = "message")]
@@ -26,10 +33,12 @@ impl std::fmt::Display for SftpError {
 impl std::error::Error for SftpError {}
 
 #[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct SftpEntry {
     pub name: String,
     pub path: String,
     pub is_dir: bool,
+    pub is_symlink: bool,
     pub size: Option<u64>,
     pub mtime: Option<u64>,
 }
@@ -38,13 +47,83 @@ pub struct SftpEntry {
 #[serde(rename_all = "camelCase")]
 pub struct ReadSftpDirectoryResult {
     pub entries: Vec<SftpEntry>,
-    /// Path actually used for listing (after realpath or fallback). Frontend should set currentPath to this.
+    /// Absolute path actually used for listing (after home resolution).
+    /// Frontend must set currentPath to this.
     pub path_used: String,
 }
 
-fn is_dir_from_perm(perm: Option<u32>) -> bool {
-    let Some(perm) = perm else { return false };
-    (perm & (S_IFMT as u32)) == (S_IFDIR as u32)
+fn mode_is_dir(perm: Option<u32>) -> bool {
+    matches!(perm, Some(p) if (p & S_IFMT) == S_IFDIR)
+}
+
+fn mode_is_symlink(perm: Option<u32>) -> bool {
+    matches!(perm, Some(p) if (p & S_IFMT) == S_IFLNK)
+}
+
+/// Joins remote paths as strings. `std::path::Path::join` must not be used for
+/// remote paths: on a Windows client it inserts `\`.
+pub(crate) fn join_remote(dir: &str, name: &str) -> String {
+    if dir.ends_with('/') {
+        format!("{}{}", dir, name)
+    } else {
+        format!("{}/{}", dir, name)
+    }
+}
+
+/// Resolves the remote home directory with a fallback chain:
+/// 1. `realpath(".")` — works on OpenSSH (note: `realpath("~")` does NOT; SFTP
+///    has no shell, so `~` is a literal filename there).
+/// 2. `/home/<username>` then `/Users/<username>` if they exist.
+/// 3. `/` as a last resort, if it is listable.
+pub(crate) fn resolve_home_dir(sftp: &Sftp, username: &str) -> Option<String> {
+    if let Ok(p) = sftp.realpath(Path::new(".")) {
+        let s = p.to_string_lossy().into_owned();
+        if !s.is_empty() {
+            return Some(s);
+        }
+    }
+    if !username.is_empty() {
+        let candidates = [format!("/home/{}", username), format!("/Users/{}", username)];
+        for candidate in candidates {
+            let is_dir = sftp
+                .stat(Path::new(&candidate))
+                .map(|s| s.is_dir())
+                .unwrap_or(false);
+            if is_dir {
+                return Some(candidate);
+            }
+        }
+    }
+    if sftp.opendir(Path::new("/")).is_ok() {
+        return Some("/".to_string());
+    }
+    None
+}
+
+/// Expands `.`, `~`, and `~/sub/dir` into an absolute remote path.
+/// Other inputs are passed through trimmed.
+pub(crate) fn expand_remote_path(
+    sftp: &Sftp,
+    username: &str,
+    input: &str,
+) -> Result<String, String> {
+    let trimmed = input.trim();
+    let no_home_err = || {
+        "Could not resolve home path. Enter an absolute path manually (e.g. /home/username)."
+            .to_string()
+    };
+    if trimmed.is_empty() || trimmed == "." || trimmed == "~" || trimmed == "~/" {
+        return resolve_home_dir(sftp, username).ok_or_else(no_home_err);
+    }
+    if let Some(rest) = trimmed.strip_prefix("~/") {
+        let home = resolve_home_dir(sftp, username).ok_or_else(no_home_err)?;
+        return Ok(join_remote(&home, rest));
+    }
+    if let Some(rest) = trimmed.strip_prefix("./") {
+        let home = resolve_home_dir(sftp, username).ok_or_else(no_home_err)?;
+        return Ok(join_remote(&home, rest));
+    }
+    Ok(trimmed.to_string())
 }
 
 fn permission_denied_hint(path: &str) -> &'static str {
@@ -52,8 +131,12 @@ fn permission_denied_hint(path: &str) -> &'static str {
     // from accessing privacy-protected folders (TCC).
     // Keep this short; frontend shows a more detailed, localized hint.
     let lower = path.to_lowercase();
-    let looks_like_macos_path = path.starts_with("/Users/") || lower.contains("/desktop") || lower.contains("/downloads")
-        || lower.contains("/documents") || lower.contains("/music") || lower.contains("/pictures");
+    let looks_like_macos_path = path.starts_with("/Users/")
+        || lower.contains("/desktop")
+        || lower.contains("/downloads")
+        || lower.contains("/documents")
+        || lower.contains("/music")
+        || lower.contains("/pictures");
     if looks_like_macos_path {
         " If the remote is macOS, enable “Allow full disk access for remote users” in System Settings → General → Sharing → Remote Login (i), then restart Remote Login."
     } else {
@@ -71,48 +154,29 @@ pub async fn read_sftp_directory(
         return Err(SftpError::InvalidPath("Path is required".into()));
     }
 
-    let session = ssh_manager
-        .get_sftp_session(&session_id)
-        .ok_or_else(|| SftpError::InvalidSession("Session not found".into()))?;
+    let sftp_handle = ssh_manager
+        .get_or_init_sftp(&session_id)
+        .map_err(SftpError::InvalidSession)?;
+    let username = ssh_manager.get_username(&session_id).unwrap_or_default();
+
+    // Count the listing as activity up front so a slow listing is not reaped mid-flight.
+    ssh_manager.touch(&session_id);
 
     let result = tauri::async_runtime::spawn_blocking(move || {
-        let sftp = session.sftp().map_err(|e| SftpError::ReadFailed(e.to_string()))?;
-        let path_trimmed = path.trim().to_string();
-        let target_path = Path::new(&path_trimmed);
+        let sftp = sftp_handle.lock().unwrap_or_else(|e| e.into_inner());
 
-        let (dir_path, path_used): (String, String) = if target_path == Path::new(".")
-            || target_path == Path::new("~")
-        {
-            // Try realpath("~") then realpath("."). If both fail, do not try "/" (often permission denied);
-            // return error so user can enter path manually (e.g. /home/username).
-            let resolved = sftp
-                .realpath(Path::new("~"))
-                .or_else(|_| sftp.realpath(Path::new(".")));
-            match resolved {
-                Ok(p) => {
-                    let s = p.to_string_lossy().into_owned();
-                    (s.clone(), s)
-                }
-                Err(_) => {
-                    return Err(SftpError::ReadFailed(
-                        "Could not resolve home path. Enter path manually in the path field (e.g. /home/username)."
-                            .to_string(),
-                    ));
-                }
-            }
-        } else {
-            (path_trimmed.clone(), path_trimmed)
-        };
+        let dir_path = expand_remote_path(&sftp, &username, &path).map_err(SftpError::ReadFailed)?;
 
-        let path_for_read = Path::new(&dir_path);
-        let items = sftp.readdir(path_for_read).map_err(|e| {
+        let items = sftp.readdir(Path::new(&dir_path)).map_err(|e| {
             let msg = e.to_string();
-            let hint = if msg.contains("permission denied") && (dir_path == "/" || dir_path == "~" || dir_path == ".") {
+            let lower = msg.to_lowercase();
+            let is_permission_denied = lower.contains("permission denied");
+            let hint = if is_permission_denied && dir_path == "/" {
                 " Try entering your home path manually (e.g. /home/username)."
             } else {
                 ""
             };
-            let mac_hint = if msg.contains("permission denied") {
+            let mac_hint = if is_permission_denied {
                 permission_denied_hint(&dir_path)
             } else {
                 ""
@@ -123,12 +187,32 @@ pub async fn read_sftp_directory(
         let mut entries: Vec<SftpEntry> = items
             .into_iter()
             .filter_map(|(p, stat)| {
-                let name = p.file_name()?.to_string_lossy().to_string();
-                let path = p.to_string_lossy().to_string();
+                let name = match p.file_name() {
+                    Some(n) => n.to_string_lossy().to_string(),
+                    None => p.to_string_lossy().to_string(),
+                };
+                if name.is_empty() || name == "." || name == ".." {
+                    return None;
+                }
+                // Build the remote path by string concatenation; readdir's
+                // PathBuf uses the client OS separator (`\` on Windows).
+                let entry_path = join_remote(&dir_path, &name);
+                let is_symlink = mode_is_symlink(stat.perm);
+                // READDIR returns lstat attributes: a symlinked directory shows
+                // up as S_IFLNK. Follow the link (stat) to classify it, so
+                // symlinked dirs stay navigable. Same when perm is missing.
+                let is_dir = if is_symlink || stat.perm.is_none() {
+                    sftp.stat(Path::new(&entry_path))
+                        .map(|s| s.is_dir())
+                        .unwrap_or_else(|_| mode_is_dir(stat.perm))
+                } else {
+                    mode_is_dir(stat.perm)
+                };
                 Some(SftpEntry {
                     name,
-                    path,
-                    is_dir: is_dir_from_perm(stat.perm),
+                    path: entry_path,
+                    is_dir,
+                    is_symlink,
                     size: stat.size,
                     mtime: stat.mtime,
                 })
@@ -143,15 +227,13 @@ pub async fn read_sftp_directory(
 
         Ok::<_, SftpError>(ReadSftpDirectoryResult {
             entries,
-            path_used,
+            path_used: dir_path,
         })
     })
     .await
     .map_err(|e| SftpError::ReadFailed(e.to_string()))??;
 
-    // Any SFTP directory read counts as activity.
     ssh_manager.touch(&session_id);
 
     Ok(result)
 }
-

@@ -3,26 +3,15 @@ mod ssh;
 mod terminal;
 
 use std::sync::Arc;
-use std::thread;
-use std::time::Duration;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let ssh_manager = Arc::new(ssh::SshSessionManager::new());
     let shell_manager = Arc::new(terminal::ShellWriteManager::new());
 
-    // Background thread: reap SSH sessions that have been idle for more than 5 minutes.
-    {
-        let ssh_manager_for_cleanup = Arc::clone(&ssh_manager);
-        thread::spawn(move || {
-            let idle_limit = Duration::from_secs(5 * 60);
-            loop {
-                // Check every minute.
-                thread::sleep(Duration::from_secs(60));
-                let _ = ssh_manager_for_cleanup.reap_idle(idle_limit);
-            }
-        });
-    }
+    // Sessions are kept alive with SSH keepalives (sent from each shell
+    // thread) instead of being reaped on idle: an idle-reaper kills sessions
+    // the user is still watching (tail -f, long builds, slow uploads).
 
     tauri::Builder::default()
         .manage(ssh_manager)
@@ -34,10 +23,15 @@ pub fn run() {
             commands::system::get_os_username,
             commands::system::get_platform,
             commands::terminal::spawn_pty_process,
+            commands::terminal::resize_pty,
             commands::terminal::write_to_terminal,
             commands::terminal::close_ssh_session,
             commands::sftp::read_sftp_directory,
             commands::sftp_upload::upload_sftp_files,
+            commands::sftp_ops::download_sftp_file,
+            commands::sftp_ops::sftp_mkdir,
+            commands::sftp_ops::sftp_rename,
+            commands::sftp_ops::sftp_remove,
         ])
         .setup(|app| {
             if cfg!(debug_assertions) {

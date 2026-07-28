@@ -1,8 +1,8 @@
 export interface SftpEntry {
   name: string;
   path: string;
-  is_dir: boolean;
+  isDir: boolean;
+  isSymlink: boolean;
   size?: number;
   mtime?: number;
 }
-

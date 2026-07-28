@@ -1,4 +1,5 @@
-import { Server, Trash2 } from 'lucide-react';
+import { Plug, Server, Trash2 } from 'lucide-react';
+import { ask } from '@tauri-apps/plugin-dialog';
 import { useSessionStore } from '../../../stores/sessionStore';
 import type { SavedSession } from '../types';
 
@@ -6,51 +7,58 @@ function SessionListItem({
   session,
   isActive,
   onSelect,
+  onConnect,
   onRemove,
   isDisabled,
 }: {
   session: SavedSession;
   isActive: boolean;
   onSelect: () => void;
+  onConnect: () => void;
   onRemove: () => void;
   isDisabled: boolean;
 }) {
   return (
+    // Selection, connect, and delete are sibling buttons — interactive
+    // elements must not nest inside each other.
     <div
-      role="button"
-      tabIndex={0}
-      onClick={() => {
-        if (isDisabled) return;
-        onSelect();
-      }}
-      onKeyDown={(e) => {
-        if (isDisabled) return;
-        if (e.key === 'Enter' || e.key === ' ') {
-          e.preventDefault();
-          onSelect();
-        }
-      }}
-      className={`flex min-w-0 items-center justify-between gap-2 rounded px-2 py-1.5 text-left text-sm transition-colors hover:bg-zinc-700/50 ${
+      className={`flex min-w-0 items-center gap-1 rounded pr-1 transition-colors hover:bg-zinc-700/50 ${
         isActive ? 'bg-zinc-700/80 text-zinc-100' : 'text-zinc-300'
-      } ${isDisabled ? 'opacity-50 pointer-events-none' : ''}`}
-      aria-label={`Connect to ${session.label}`}
+      }`}
     >
-      <span className="min-w-0 flex-1 truncate" title={session.label}>
+      <button
+        type="button"
+        onClick={onSelect}
+        onDoubleClick={() => {
+          if (!isDisabled) onConnect();
+        }}
+        className="min-w-0 flex-1 truncate px-2 py-1.5 text-left text-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-zinc-400"
+        aria-label={`Select session ${session.label}`}
+        title={`${session.label} — 더블클릭으로 연결`}
+      >
         {session.label}
         {session.lastConnectedAt && (
           <span className="ml-2 text-[11px] text-zinc-500" aria-label="Last connected">
             {new Date(session.lastConnectedAt).toLocaleDateString()}
           </span>
         )}
-      </span>
+      </button>
       <button
         type="button"
-        onClick={(e) => {
-          e.stopPropagation();
-          onRemove();
-        }}
-        className="shrink-0 rounded p-1 text-zinc-500 hover:bg-zinc-600 hover:text-zinc-300 focus:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400"
+        onClick={onConnect}
+        disabled={isDisabled}
+        className="shrink-0 rounded p-1 text-zinc-500 hover:bg-zinc-600 hover:text-emerald-300 disabled:opacity-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400"
+        aria-label={`Connect to ${session.label}`}
+        title="Connect"
+      >
+        <Plug className="h-3.5 w-3.5" aria-hidden />
+      </button>
+      <button
+        type="button"
+        onClick={onRemove}
+        className="shrink-0 rounded p-1 text-zinc-500 hover:bg-zinc-600 hover:text-red-300 focus:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400"
         aria-label={`Remove session ${session.label}`}
+        title="Delete"
       >
         <Trash2 className="h-3.5 w-3.5" aria-hidden />
       </button>
@@ -65,7 +73,18 @@ export function SessionList({
   onConnectSavedSession: (session: SavedSession) => void;
   isConnecting?: boolean;
 }) {
-  const { savedSessions, activeSessionId, setActiveSessionId, removeSession } = useSessionStore();
+  const savedSessions = useSessionStore((s) => s.savedSessions);
+  const activeSessionId = useSessionStore((s) => s.activeSessionId);
+  const setActiveSessionId = useSessionStore((s) => s.setActiveSessionId);
+  const removeSession = useSessionStore((s) => s.removeSession);
+
+  const onRemoveWithConfirm = async (session: SavedSession) => {
+    const confirmed = await ask(`저장된 세션을 삭제할까요?\n${session.label}`, {
+      title: 'Delete session',
+      kind: 'warning',
+    });
+    if (confirmed) removeSession(session.id);
+  };
 
   if (savedSessions.length === 0) {
     return (
@@ -85,11 +104,9 @@ export function SessionList({
             session={session}
             isActive={activeSessionId === session.id}
             isDisabled={isConnecting}
-            onSelect={() => {
-              setActiveSessionId(session.id);
-              onConnectSavedSession(session);
-            }}
-            onRemove={() => removeSession(session.id)}
+            onSelect={() => setActiveSessionId(session.id)}
+            onConnect={() => onConnectSavedSession(session)}
+            onRemove={() => void onRemoveWithConfirm(session)}
           />
         </li>
       ))}

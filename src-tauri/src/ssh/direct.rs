@@ -1,6 +1,7 @@
 use crate::ssh::auth::{AuthMethod, AuthPayload};
 use crate::ssh::error::SshConnectionError;
-use ssh2::{MethodType, Session};
+use base64::Engine;
+use ssh2::{CheckResult, HashType, HostKeyType, KnownHostFileKind, KnownHostKeyFormat, MethodType, Session};
 use std::net::TcpStream;
 use std::path::PathBuf;
 
@@ -10,6 +11,11 @@ use std::path::PathBuf;
 const CONNECT_TIMEOUT_MS: u32 = 60_000;
 #[cfg(not(windows))]
 const CONNECT_TIMEOUT_MS: u32 = 15_000;
+
+/// Steady-state per-operation timeout after the connection is established.
+/// The connect-phase timeout is too aggressive for long-running operations
+/// (a huge readdir, a slow stat over a saturated tunnel).
+pub(crate) const OPERATION_TIMEOUT_MS: u32 = 30_000;
 
 /// Returns the user's home directory for path expansion (cross-platform).
 fn home_dir() -> Option<PathBuf> {
@@ -54,6 +60,10 @@ pub fn connect_direct(
     tcp.set_write_timeout(Some(std::time::Duration::from_millis(CONNECT_TIMEOUT_MS as u64)))
         .map_err(|e| SshConnectionError::TargetConnectionFailed(e.to_string()))?;
 
+    // Keep a handle to relax the socket timeouts after authentication:
+    // libssh2's own session timeout governs steady-state operations.
+    let tcp_for_later = tcp.try_clone().ok();
+
     let mut sess = Session::new().map_err(|e| {
         SshConnectionError::TargetConnectionFailed(format!("Session::new: {}", e))
     })?;
@@ -66,16 +76,114 @@ pub fn connect_direct(
     })?;
     on_progress("SSH handshake completed");
 
+    verify_host_key(&sess, host, port, on_progress)?;
+
     sess.set_timeout(CONNECT_TIMEOUT_MS);
 
     authenticate_session(&mut sess, username, auth, on_progress, |e| {
         SshConnectionError::TargetAuthFailed(e.to_string())
     })?;
 
+    sess.set_timeout(OPERATION_TIMEOUT_MS);
+    if let Some(tcp) = tcp_for_later {
+        // Switch the socket to non-blocking once the connection is up. The
+        // shell loop runs the session in non-blocking mode, and a blocking
+        // socket would stall recv() indefinitely (frozen input, "transport
+        // read"/"draining incoming flow" failures over bastion tunnels).
+        // Blocking-mode operations (SFTP) still wait correctly: libssh2 polls
+        // the socket honoring the session timeout above.
+        let _ = tcp.set_nonblocking(true);
+    }
+
     Ok(sess)
 }
 
-fn configure_session_methods(sess: &mut Session, on_progress: &dyn Fn(&str)) {
+fn known_hosts_path() -> Option<PathBuf> {
+    home_dir().map(|h| h.join(".ssh").join("known_hosts"))
+}
+
+fn host_key_fingerprint(sess: &Session) -> String {
+    sess.host_key_hash(HashType::Sha256)
+        .map(|hash| {
+            format!(
+                "SHA256:{}",
+                base64::engine::general_purpose::STANDARD_NO_PAD.encode(hash)
+            )
+        })
+        .unwrap_or_else(|| "unknown".to_string())
+}
+
+/// Verifies the server host key against `~/.ssh/known_hosts` with a
+/// trust-on-first-use policy: unknown hosts are recorded on first contact,
+/// but a CHANGED key aborts the connection — that is the MITM signal.
+pub(crate) fn verify_host_key(
+    sess: &Session,
+    host: &str,
+    port: u16,
+    on_progress: &dyn Fn(&str),
+) -> Result<(), SshConnectionError> {
+    let (key, key_type) = sess.host_key().ok_or_else(|| {
+        SshConnectionError::HostKeyVerificationFailed("Server presented no host key".into())
+    })?;
+
+    let mut known_hosts = sess
+        .known_hosts()
+        .map_err(|e| SshConnectionError::HostKeyVerificationFailed(e.to_string()))?;
+    let path = known_hosts_path();
+    if let Some(p) = &path {
+        if p.exists() {
+            let _ = known_hosts.read_file(p, KnownHostFileKind::OpenSSH);
+        }
+    }
+
+    match known_hosts.check_port(host, port, key) {
+        CheckResult::Match => {
+            on_progress(&format!("Host key verified for {}:{}", host, port));
+            Ok(())
+        }
+        CheckResult::Mismatch => Err(SshConnectionError::HostKeyVerificationFailed(format!(
+            "HOST KEY CHANGED for {}:{} (fingerprint {}). Someone could be intercepting this connection. \
+             If the server was legitimately reinstalled, remove its entry from ~/.ssh/known_hosts and reconnect.",
+            host,
+            port,
+            host_key_fingerprint(sess)
+        ))),
+        CheckResult::NotFound | CheckResult::Failure => {
+            on_progress(&format!(
+                "Host key for {}:{} is not in known_hosts; trusting on first use ({})",
+                host,
+                port,
+                host_key_fingerprint(sess)
+            ));
+            if matches!(key_type, HostKeyType::Unknown) {
+                on_progress("Warning: unknown host key type; not persisting to known_hosts");
+                return Ok(());
+            }
+            let format = KnownHostKeyFormat::from(key_type);
+            let host_entry = if port == 22 {
+                host.to_string()
+            } else {
+                format!("[{}]:{}", host, port)
+            };
+            if known_hosts
+                .add(&host_entry, key, "added by omniterm", format)
+                .is_ok()
+            {
+                if let Some(p) = &path {
+                    if let Some(dir) = p.parent() {
+                        let _ = std::fs::create_dir_all(dir);
+                    }
+                    if let Err(e) = known_hosts.write_file(p, KnownHostFileKind::OpenSSH) {
+                        on_progress(&format!("Warning: could not persist known_hosts: {}", e));
+                    }
+                }
+            }
+            Ok(())
+        }
+    }
+}
+
+pub(crate) fn configure_session_methods(sess: &mut Session, on_progress: &dyn Fn(&str)) {
     // Prefer modern algorithms, but include legacy fallbacks for older bastion/targets.
     // This avoids "Unable to exchange encryption keys" with legacy-only servers.
     let kex = "curve25519-sha256,curve25519-sha256@libssh.org,ecdh-sha2-nistp256,ecdh-sha2-nistp384,ecdh-sha2-nistp521,diffie-hellman-group14-sha256,diffie-hellman-group16-sha512,diffie-hellman-group18-sha512,diffie-hellman-group14-sha1,diffie-hellman-group1-sha1";

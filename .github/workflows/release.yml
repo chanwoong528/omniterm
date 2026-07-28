@@ -87,6 +87,46 @@ jobs:
       - name: Install frontend dependencies
         run: npm ci
 
+      # macOS 서명·공증: 시크릿이 "등록된 경우에만" env를 주입한다.
+      # 주의: 시크릿이 비어 있어도 env 키가 존재하면(빈 문자열) tauri-bundler가
+      # 서명을 시도하다 실패하므로, 미등록 상태에서는 env 자체를 만들지 않는다.
+      # 필요한 시크릿: APPLE_CERTIFICATE(base64 .p12), APPLE_CERTIFICATE_PASSWORD,
+      # APPLE_SIGNING_IDENTITY, APPLE_ID, APPLE_PASSWORD(앱 전용 암호), APPLE_TEAM_ID
+      # 발급 절차는 docs/MACOS_SIGNING.md 참고.
+      - name: Enable macOS signing & notarization (when secrets are configured)
+        if: startsWith(matrix.platform, 'macos')
+        shell: bash
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          if [ -z "$APPLE_CERTIFICATE" ] || [ -z "$APPLE_SIGNING_IDENTITY" ]; then
+            echo "macOS signing secrets not configured; building UNSIGNED (Gatekeeper '손상됨' 경고가 표시됩니다)."
+            exit 0
+          fi
+          {
+            echo "APPLE_CERTIFICATE<<APPLE_CERT_EOF"
+            echo "$APPLE_CERTIFICATE"
+            echo "APPLE_CERT_EOF"
+            echo "APPLE_CERTIFICATE_PASSWORD=$APPLE_CERTIFICATE_PASSWORD"
+            echo "APPLE_SIGNING_IDENTITY=$APPLE_SIGNING_IDENTITY"
+          } >> "$GITHUB_ENV"
+          echo "Code signing enabled."
+          if [ -n "$APPLE_ID" ] && [ -n "$APPLE_PASSWORD" ] && [ -n "$APPLE_TEAM_ID" ]; then
+            {
+              echo "APPLE_ID=$APPLE_ID"
+              echo "APPLE_PASSWORD=$APPLE_PASSWORD"
+              echo "APPLE_TEAM_ID=$APPLE_TEAM_ID"
+            } >> "$GITHUB_ENV"
+            echo "Notarization enabled."
+          else
+            echo "Notarization secrets missing; app will be signed but NOT notarized (경고가 남을 수 있음)."
+          fi
+
       - name: Build Tauri app
         uses: tauri-apps/tauri-action@v0
         env:

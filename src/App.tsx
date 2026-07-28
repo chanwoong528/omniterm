@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { TitleBar } from './components/layout/TitleBar';
 import { Sidebar } from './components/layout/Sidebar';
 import { MainArea } from './components/layout/MainArea';
@@ -34,14 +34,32 @@ function App() {
     return stored ?? SIDEBAR_DEFAULT_PX;
   });
 
+  const persistTimeoutRef = useRef<number | null>(null);
+
+  // Persist debounced: a splitter drag fires this per pointer move, and a
+  // synchronous localStorage write per move is a disk write per frame.
   const onSidebarWidthChange = useCallback((widthPx: number) => {
     const clamped = clampSidebarWidthPx(widthPx);
     setSidebarWidthPx(clamped);
-    try {
-      window.localStorage.setItem(STORAGE_KEY_SIDEBAR_WIDTH, String(clamped));
-    } catch {
-      // ignore
+    if (persistTimeoutRef.current !== null) {
+      window.clearTimeout(persistTimeoutRef.current);
     }
+    persistTimeoutRef.current = window.setTimeout(() => {
+      persistTimeoutRef.current = null;
+      try {
+        window.localStorage.setItem(STORAGE_KEY_SIDEBAR_WIDTH, String(clamped));
+      } catch {
+        // ignore
+      }
+    }, 150);
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (persistTimeoutRef.current !== null) {
+        window.clearTimeout(persistTimeoutRef.current);
+      }
+    };
   }, []);
 
   return (

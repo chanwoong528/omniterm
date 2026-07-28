@@ -8,6 +8,7 @@ pub enum SshConnectionError {
     TargetConnectionFailed(String),
     TargetAuthFailed(String),
     InvalidConfig(String),
+    HostKeyVerificationFailed(String),
 }
 
 impl std::fmt::Display for SshConnectionError {
@@ -18,6 +19,7 @@ impl std::fmt::Display for SshConnectionError {
             Self::TargetConnectionFailed(m) => write!(f, "Target connection failed: {}", m),
             Self::TargetAuthFailed(m) => write!(f, "Target authentication failed: {}", m),
             Self::InvalidConfig(m) => write!(f, "Invalid config: {}", m),
+            Self::HostKeyVerificationFailed(m) => write!(f, "Host key verification failed: {}", m),
         }
     }
 }

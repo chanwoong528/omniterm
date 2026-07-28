@@ -11,12 +11,16 @@ use crate::ssh::error::SshConnectionError;
 use ssh2::{Channel, Session};
 use std::io::{ErrorKind, Read, Write};
 use std::net::{TcpListener, TcpStream};
+use std::sync::mpsc;
 use std::thread;
 use std::time::Duration;
 
 const CONNECT_TIMEOUT_MS: u32 = 15_000;
 const COPY_BUF_SIZE: usize = 32 * 1024;
-const BRIDGE_STREAM_READ_TIMEOUT_MS: u64 = 50;
+const BRIDGE_STREAM_READ_TIMEOUT_MS: u64 = 10;
+const BRIDGE_IDLE_SLEEP_MS: u64 = 2;
+const BRIDGE_WRITE_RETRY_MS: u64 = 2;
+const BRIDGE_READY_TIMEOUT_MS: u64 = 5_000;
 
 /// Bastion을 거쳐 Target SSH 세션을 수립합니다.
 /// 반환: (Target Session, Bastion Session). Bastion Session을 drop하면 터널이 닫히므로
@@ -77,9 +81,18 @@ pub fn connect_via_bastion(
         .set_write_timeout(Some(Duration::from_millis(CONNECT_TIMEOUT_MS as u64)))
         .map_err(|e| SshConnectionError::TargetConnectionFailed(e.to_string()))?;
 
+    // The bridge signals when its loop is actually running — a fixed sleep is
+    // a race on a loaded machine or a cold thread pool.
+    let (ready_tx, ready_rx) = mpsc::channel::<()>();
     thread::spawn(move || {
+        let _ = ready_tx.send(());
         bridge_channel_and_stream(channel, stream_for_channel);
     });
+    ready_rx
+        .recv_timeout(Duration::from_millis(BRIDGE_READY_TIMEOUT_MS))
+        .map_err(|_| {
+            SshConnectionError::TargetConnectionFailed("Tunnel bridge failed to start".into())
+        })?;
     on_progress("[Tunnel] Bridge active");
 
     let timeout_duration = Duration::from_millis(CONNECT_TIMEOUT_MS as u64);
@@ -89,8 +102,7 @@ pub fn connect_via_bastion(
     stream_for_session
         .set_write_timeout(Some(timeout_duration))
         .map_err(|e| SshConnectionError::TargetConnectionFailed(e.to_string()))?;
-
-    thread::sleep(Duration::from_millis(100));
+    let stream_for_later = stream_for_session.try_clone().ok();
 
     on_progress("[Target] Starting SSH handshake through tunnel...");
     let mut target_sess = Session::new().map_err(|e| {
@@ -98,6 +110,9 @@ pub fn connect_via_bastion(
     })?;
     target_sess.set_timeout(CONNECT_TIMEOUT_MS);
     target_sess.set_tcp_stream(stream_for_session);
+    // Legacy KEX/cipher fallbacks must apply to the tunneled target too, not
+    // only to direct connections and the bastion hop.
+    direct::configure_session_methods(&mut target_sess, on_progress);
     target_sess
         .handshake()
         .map_err(|e| SshConnectionError::TargetConnectionFailed(format!("Target handshake: {}", e)))?;
@@ -106,19 +121,43 @@ pub fn connect_via_bastion(
     let target_progress = |msg: &str| {
         on_progress(&format!("[Target] {}", msg));
     };
+    direct::verify_host_key(&target_sess, target_host, target_port, &target_progress)?;
+
     direct::authenticate_session(&mut target_sess, target_username, target_auth, &target_progress, |e| {
         SshConnectionError::TargetAuthFailed(e.to_string())
     })?;
 
+    target_sess.set_timeout(direct::OPERATION_TIMEOUT_MS);
+    if let Some(stream) = stream_for_later {
+        // Same rationale as connect_direct: the shell loop uses non-blocking
+        // session mode, which requires a non-blocking transport socket.
+        let _ = stream.set_nonblocking(true);
+    }
+
     Ok((target_sess, bastion_sess))
 }
 
+/// Creates a loopback TCP pair and verifies that the accepted peer really is
+/// our own connector: between bind and accept any local process could connect
+/// to the ephemeral port, and everything the tunnel carries (including the
+/// target SSH handshake) flows over this socket.
 fn create_connected_pair() -> std::io::Result<(TcpStream, TcpStream)> {
     let listener = TcpListener::bind("127.0.0.1:0")?;
     let port = listener.local_addr()?.port();
     let connector = TcpStream::connect(("127.0.0.1", port))?;
-    let (accepted, _) = listener.accept()?;
-    Ok((accepted, connector))
+    let expected = connector.local_addr()?;
+    // Bounded number of tries: reject foreign connections instead of pairing with them.
+    for _ in 0..8 {
+        let (accepted, peer) = listener.accept()?;
+        if peer == expected {
+            return Ok((accepted, connector));
+        }
+        drop(accepted);
+    }
+    Err(std::io::Error::new(
+        ErrorKind::ConnectionRefused,
+        "Loopback bridge pairing failed: unexpected peer kept connecting",
+    ))
 }
 
 /// Single-thread bridge: only this thread touches the channel (libssh2 is not thread-safe).
@@ -129,7 +168,13 @@ fn bridge_channel_and_stream(mut channel: Channel, mut stream: TcpStream) {
     let mut from_stream = [0u8; COPY_BUF_SIZE];
     loop {
         match channel.read(&mut from_channel) {
-            Ok(0) => break,
+            Ok(0) => {
+                // On a non-blocking channel Ok(0) can mean "no data"; only a
+                // real EOF ends the tunnel.
+                if channel.eof() {
+                    break;
+                }
+            }
             Ok(n) => {
                 if stream.write_all(&from_channel[..n]).is_err() {
                     break;
@@ -141,12 +186,35 @@ fn bridge_channel_and_stream(mut channel: Channel, mut stream: TcpStream) {
         match stream.read(&mut from_stream) {
             Ok(0) => break,
             Ok(n) => {
-                if channel.write_all(&from_stream[..n]).is_err() {
+                if channel_write_fully(&mut channel, &from_stream[..n]).is_err() {
                     break;
                 }
             }
-            Err(_) => {}
+            // The read timeout shows up as WouldBlock or TimedOut depending on
+            // platform; any other error (ConnectionReset, BrokenPipe) means the
+            // local end is dead — exit instead of spinning forever.
+            Err(e) if e.kind() == ErrorKind::WouldBlock || e.kind() == ErrorKind::TimedOut => {}
+            Err(_) => break,
         }
-        thread::sleep(Duration::from_millis(2));
+        thread::sleep(Duration::from_millis(BRIDGE_IDLE_SLEEP_MS));
     }
+    let _ = channel.close();
+}
+
+/// Writes the whole buffer to the non-blocking channel, retrying on
+/// WouldBlock. `write_all` aborts on WouldBlock after a partial write and the
+/// already-consumed bytes would be silently lost mid-tunnel.
+fn channel_write_fully(channel: &mut Channel, data: &[u8]) -> Result<(), ()> {
+    let mut written = 0;
+    while written < data.len() {
+        match channel.write(&data[written..]) {
+            Ok(0) => return Err(()),
+            Ok(n) => written += n,
+            Err(e) if e.kind() == ErrorKind::WouldBlock => {
+                thread::sleep(Duration::from_millis(BRIDGE_WRITE_RETRY_MS));
+            }
+            Err(_) => return Err(()),
+        }
+    }
+    Ok(())
 }

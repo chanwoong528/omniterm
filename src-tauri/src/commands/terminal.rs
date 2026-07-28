@@ -5,7 +5,7 @@ use tauri::AppHandle;
 use tauri::State;
 
 #[tauri::command]
-pub fn spawn_pty_process(
+pub async fn spawn_pty_process(
     session_id: String,
     ssh_manager: State<'_, Arc<ssh::SshSessionManager>>,
     shell_manager: State<'_, Arc<terminal::ShellWriteManager>>,
@@ -17,37 +17,57 @@ pub fn spawn_pty_process(
 
     let (tx, rx) = std::sync::mpsc::channel();
 
-    terminal::spawn_shell_thread(session, session_id.clone(), app, rx)?;
-    shell_manager.register(session_id, tx);
+    // Register first: this is the duplicate-spawn guard. A second call for the
+    // same session fails here instead of spawning a competing shell thread.
+    shell_manager.register(session_id.clone(), tx)?;
+    if let Err(e) = terminal::spawn_shell_thread(session, session_id.clone(), app, rx) {
+        shell_manager.close(&session_id);
+        return Err(e);
+    }
 
     Ok(())
 }
 
-/// Closes an SSH session and its associated terminal writer, if present.
+/// Resizes the remote PTY to match the client terminal geometry.
 #[tauri::command]
-pub fn close_ssh_session(
+pub async fn resize_pty(
+    session_id: String,
+    cols: u32,
+    rows: u32,
+    shell_manager: State<'_, Arc<terminal::ShellWriteManager>>,
+) -> Result<(), String> {
+    if cols == 0 || rows == 0 {
+        return Err("Invalid terminal size".to_string());
+    }
+    if shell_manager.resize(&session_id, cols, rows) {
+        Ok(())
+    } else {
+        Err("Terminal session not found".to_string())
+    }
+}
+
+/// Closes an SSH session and its associated terminal writer, if present.
+/// Not finding the session is not an error: it may already have been closed
+/// or dropped on the backend side.
+#[tauri::command]
+pub async fn close_ssh_session(
     session_id: String,
     ssh_manager: State<'_, Arc<ssh::SshSessionManager>>,
     shell_manager: State<'_, Arc<terminal::ShellWriteManager>>,
 ) -> Result<(), String> {
-    let had_ssh = ssh_manager.remove(&session_id);
-    let had_shell = shell_manager.remove(&session_id);
-
-    if had_ssh || had_shell {
-        Ok(())
-    } else {
-        Err("Session not found".to_string())
-    }
+    shell_manager.close(&session_id);
+    ssh_manager.remove(&session_id);
+    Ok(())
 }
 
 #[tauri::command]
-pub fn write_to_terminal(
+pub async fn write_to_terminal(
     session_id: String,
     data: String,
     ssh_manager: State<'_, Arc<ssh::SshSessionManager>>,
     shell_manager: State<'_, Arc<terminal::ShellWriteManager>>,
 ) -> Result<(), String> {
-    let sent = shell_manager.send(&session_id, data.into_bytes());
+    let sent = shell_manager.send_data(&session_id, data.into_bytes());
     if sent {
         // Any terminal input counts as activity; keep the session alive.
         ssh_manager.touch(&session_id);

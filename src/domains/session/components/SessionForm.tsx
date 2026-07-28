@@ -1,23 +1,12 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import type { AuthMethod, BastionConfig, SavedSession, TargetServerConfig } from '../types';
 import { useKeyManagerStore } from '../../../stores/keyManagerStore';
 import { useSessionStore } from '../../../stores/sessionStore';
-import { ChevronDown, Server, Key } from 'lucide-react';
+import { parseSshCommand } from '../utils/parseSshCommand';
+import { ChevronDown, ClipboardPaste, Server, Key } from 'lucide-react';
 
 const DEFAULT_SSH_PORT = 22;
-const DEFAULT_SAVE_ENABLED = true;
-
-/** Bastion example: same hosts/users on all platforms; key path is platform-specific. */
-const BASTION_EXAMPLE_HOSTS = {
-  keyLabel: 'bastion-key',
-  bastionHost: '3.39.6.120',
-  bastionPort: 22,
-  bastionUsername: 'ec2-user',
-  targetHost: '10.0.136.140',
-  targetPort: 22,
-  targetUsername: 'ec2-user',
-} as const;
 
 interface SessionFormProps {
   onConnect: (args: {
@@ -25,7 +14,7 @@ interface SessionFormProps {
     useBastion: boolean;
     bastion?: BastionConfig;
     reuseBastionAuth?: boolean;
-    saveSession?: { id: string; label: string } | null;
+    saveSession?: { id?: string; label: string } | null;
   }) => void;
   onTestConnection?: (args: {
     target: TargetServerConfig;
@@ -62,41 +51,10 @@ export function SessionForm({
     return getSessionById(activeSessionId);
   }, [activeSessionId, getSessionById]);
 
-  const [platform, setPlatform] = useState<string>('darwin');
-  const [osUsername, setOsUsername] = useState<string>('');
-
-  useEffect(() => {
-    const load = async () => {
-      try {
-        const [p, u] = await Promise.all([
-          invoke<string>('get_platform'),
-          invoke<string>('get_os_username'),
-        ]);
-        setPlatform(p ?? 'darwin');
-        setOsUsername(u ?? '');
-      } catch {
-        // keep defaults
-      }
-    };
-    load();
-  }, []);
-
-  const bastionExample = useMemo(() => {
-    const isWindows = platform === 'win32';
-    const keyPath = isWindows
-      ? `C:/Users/${osUsername || 'YourName'}/.ssh/your-key.pem`
-      : '/Users/hankookilbo/Desktop/stuff-key/pem/hk-hrams-bastion-key.pem';
-    return {
-      ...BASTION_EXAMPLE_HOSTS,
-      keyPath,
-    };
-  }, [platform, osUsername]);
-
   const [useBastion, setUseBastion] = useState(() => selectedSession?.useBastion ?? false);
   const [reuseBastionAuth, setReuseBastionAuth] = useState(() => selectedSession?.reuseBastionAuth ?? false);
 
   const [sessionLabel, setSessionLabel] = useState(() => selectedSession?.label ?? '');
-  const [saveEnabled, setSaveEnabled] = useState(DEFAULT_SAVE_ENABLED);
 
   const [targetHost, setTargetHost] = useState(() => selectedSession?.target.host ?? '');
   const [targetPort, setTargetPort] = useState(() => selectedSession?.target.port ?? DEFAULT_SSH_PORT);
@@ -154,16 +112,31 @@ export function SessionForm({
     const target = buildTargetConfig();
     const bastion = buildBastionConfig();
 
-    const label = sessionLabel.trim() || buildDefaultLabel(target);
-    const sessionIdForSave = selectedSession?.id ?? createSessionId();
-    const saveSession = saveEnabled ? { id: sessionIdForSave, label } : null;
+    // Sessions are always auto-saved at connect time (passwords excluded).
+    // If the label was inherited from the selected session but the endpoints
+    // were edited to a different server, drop it — the new entry should get
+    // its own default (user@host) name, not the old session's label.
+    const isLabelInherited = Boolean(selectedSession && sessionLabel.trim() === selectedSession.label);
+    const endpointsChanged = Boolean(
+      selectedSession &&
+        (selectedSession.target.host !== target.host ||
+          selectedSession.target.port !== target.port ||
+          selectedSession.target.username !== target.username ||
+          selectedSession.useBastion !== useBastion ||
+          (useBastion &&
+            (selectedSession.bastion?.host !== bastion?.host ||
+              selectedSession.bastion?.port !== bastion?.port ||
+              selectedSession.bastion?.username !== bastion?.username)))
+    );
+    const label =
+      isLabelInherited && endpointsChanged ? buildDefaultLabel(target) : sessionLabel.trim() || buildDefaultLabel(target);
 
     onConnect({
       target,
       useBastion,
       bastion,
       reuseBastionAuth: useBastion ? reuseBastionAuth : false,
-      saveSession,
+      saveSession: { label },
     });
   };
 
@@ -220,41 +193,132 @@ export function SessionForm({
     }
   };
 
-  const fillBastionExample = () => {
-    const existing = registeredKeys.find(
-      (k) => k.storageKey === bastionExample.keyPath || k.label === bastionExample.keyLabel
-    );
-    const keyId =
-      existing?.id ??
-      (() => {
-        const id = typeof crypto !== 'undefined' && 'randomUUID' in crypto ? crypto.randomUUID() : `key_${Date.now()}`;
-        addKey({
-          id,
-          label: bastionExample.keyLabel,
-          storageKey: bastionExample.keyPath,
-          keyType: '.pem',
-          createdAt: new Date().toISOString(),
-        });
-        return id;
-      })();
+  const [importText, setImportText] = useState('');
+  const [importError, setImportError] = useState<string | null>(null);
 
-    setSessionLabel(`${bastionExample.targetUsername}@${bastionExample.targetHost} (via bastion)`);
-    setTargetHost(bastionExample.targetHost);
-    setTargetPort(bastionExample.targetPort);
-    setTargetUsername(bastionExample.targetUsername);
-    setTargetAuthMethod('private_key');
-    setTargetKeyId(keyId);
-    setUseBastion(true);
-    setReuseBastionAuth(true);
-    setBastionHost(bastionExample.bastionHost);
-    setBastionPort(bastionExample.bastionPort);
-    setBastionUsername(bastionExample.bastionUsername);
-    setBastionAuthMethod('private_key');
-    setBastionKeyId(keyId);
+  /**
+   * Registers a key path in the Key Manager (dedup by path) and returns its id.
+   * `cache` covers keys added earlier in the same import — the store state in
+   * `registeredKeys` is stale until the next render.
+   */
+  const ensureRegisteredKey = (keyPath: string, cache: Map<string, string>): string => {
+    const cached = cache.get(keyPath);
+    if (cached) return cached;
+    const existing = registeredKeys.find((k) => k.storageKey === keyPath);
+    if (existing) {
+      cache.set(keyPath, existing.id);
+      return existing.id;
+    }
+    const id = createSessionId();
+    const fileName = keyPath.split(/[\\/]/).pop() ?? keyPath;
+    const dotIndex = fileName.lastIndexOf('.');
+    addKey({
+      id,
+      label: dotIndex > 0 ? fileName.slice(0, dotIndex) : fileName,
+      storageKey: keyPath,
+      keyType: dotIndex > 0 ? fileName.slice(dotIndex) : 'key',
+      createdAt: new Date().toISOString(),
+    });
+    cache.set(keyPath, id);
+    return id;
+  };
+
+  const onImportSshCommand = () => {
+    const result = parseSshCommand(importText);
+    if (!result.ok) {
+      setImportError(result.reason);
+      return;
+    }
+    setImportError(null);
+    const { target, bastion } = result.value;
+    const keyIdCache = new Map<string, string>();
+
+    setTargetHost(target.host);
+    setTargetPort(target.port);
+    setTargetUsername(target.username);
+    if (target.keyPath) {
+      setTargetAuthMethod('private_key');
+      setTargetKeyId(ensureRegisteredKey(target.keyPath, keyIdCache));
+    } else {
+      setTargetAuthMethod('password');
+    }
+
+    if (bastion) {
+      const bastionKeyPath = bastion.keyPath ?? target.keyPath;
+      setUseBastion(true);
+      setBastionHost(bastion.host);
+      setBastionPort(bastion.port);
+      setBastionUsername(bastion.username);
+      if (bastionKeyPath) {
+        setBastionAuthMethod('private_key');
+        setBastionKeyId(ensureRegisteredKey(bastionKeyPath, keyIdCache));
+      } else {
+        setBastionAuthMethod('password');
+      }
+      setReuseBastionAuth(Boolean(target.keyPath && bastionKeyPath === target.keyPath));
+    } else {
+      setUseBastion(false);
+      setReuseBastionAuth(false);
+    }
+
+    const label = `${target.username ? `${target.username}@` : ''}${target.host}`;
+    setSessionLabel(bastion ? `${label} (via bastion)` : label);
+    setImportText('');
   };
 
   return (
     <form onSubmit={handleSubmit} className="flex min-w-0 flex-col gap-4">
+      {/* Paste an ssh command → keys auto-registered, form auto-filled */}
+      <div className="flex min-w-0 flex-col gap-1.5 rounded border border-zinc-700 bg-zinc-800/40 p-2">
+        <label
+          htmlFor="ssh-command-import"
+          className="flex items-center gap-1.5 text-xs font-medium text-zinc-400"
+        >
+          <ClipboardPaste className="h-3.5 w-3.5" aria-hidden />
+          SSH 명령어로 채우기
+        </label>
+        <textarea
+          id="ssh-command-import"
+          rows={3}
+          value={importText}
+          onChange={(e) => {
+            setImportText(e.target.value);
+            if (importError) setImportError(null);
+          }}
+          onKeyDown={(e) => {
+            if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
+              e.preventDefault();
+              onImportSshCommand();
+            }
+          }}
+          autoCapitalize="none"
+          autoCorrect="off"
+          spellCheck={false}
+          placeholder={'ssh -i key.pem -o ProxyCommand="ssh -i key.pem -W %h:%p user@bastion" user@target'}
+          className="min-w-0 resize-y rounded border border-zinc-600 bg-zinc-900 px-2 py-1.5 font-mono text-xs text-zinc-100 placeholder-zinc-600 focus:border-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-500"
+          aria-label="Paste an ssh command to fill the form"
+        />
+        <div className="flex min-w-0 items-center justify-between gap-2">
+          {importError ? (
+            <p className="min-w-0 flex-1 text-xs text-red-300" role="alert">
+              {importError}
+            </p>
+          ) : (
+            <p className="min-w-0 flex-1 truncate text-xs text-zinc-500">
+              키 파일은 Key Manager에 자동 등록됩니다. (⌘/Ctrl+Enter)
+            </p>
+          )}
+          <button
+            type="button"
+            onClick={onImportSshCommand}
+            disabled={!importText.trim()}
+            className="shrink-0 rounded bg-zinc-600 px-2.5 py-1 text-xs font-medium text-white hover:bg-zinc-500 disabled:cursor-not-allowed disabled:opacity-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400"
+          >
+            가져오기
+          </button>
+        </div>
+      </div>
+
       <p className="text-xs text-zinc-500">
         테스트:{' '}
         <button
@@ -265,15 +329,6 @@ export function SessionForm({
         >
           이 컴퓨터(127.0.0.1)로 채우기
         </button>
-        {' · '}
-        <button
-            type="button"
-            onClick={fillBastionExample}
-            className="underline hover:text-zinc-300 focus:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400 rounded"
-            aria-label="Fill bastion example (ec2-user@10.0.136.140 via 3.39.6.120)"
-          >
-            {platform === 'win32' ? 'Bastion 예제로 채우기 (Windows)' : 'hk-hrams bastion 예제로 채우기'}
-          </button>
       </p>
 
       <fieldset className="flex min-w-0 flex-col gap-2">
@@ -289,18 +344,9 @@ export function SessionForm({
           className="min-w-0 rounded border border-zinc-600 bg-zinc-800 px-3 py-2 text-sm text-zinc-100 placeholder-zinc-500 focus:border-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-500"
           aria-label="Saved session label"
         />
-        <label className="flex min-w-0 cursor-pointer items-center gap-2">
-          <input
-            type="checkbox"
-            checked={saveEnabled}
-            onChange={(e) => setSaveEnabled(e.target.checked)}
-            className="h-4 w-4 shrink-0 rounded border-zinc-600 bg-zinc-800 text-zinc-400 focus:ring-zinc-500"
-            aria-label="Save this session"
-          />
-          <span className="min-w-0 truncate text-sm text-zinc-300">
-            Save session (passwords are not stored)
-          </span>
-        </label>
+        <p className="text-xs text-zinc-500">
+          연결 시 세션이 자동 저장됩니다. (비밀번호는 저장되지 않음)
+        </p>
       </fieldset>
       {/* Target Server */}
       <fieldset className="flex min-w-0 flex-col gap-2">
@@ -323,8 +369,8 @@ export function SessionForm({
             type="number"
             min={1}
             max={65535}
-            placeholder="Port"
-            value={targetPort === DEFAULT_SSH_PORT ? '' : targetPort}
+            placeholder="22"
+            value={targetPort}
             onChange={(e) => setTargetPort(e.target.value ? Number(e.target.value) : DEFAULT_SSH_PORT)}
             className="w-16 min-w-0 shrink-0 rounded border border-zinc-600 bg-zinc-800 px-2 py-2 text-sm text-zinc-100 placeholder-zinc-500 focus:border-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-500"
             aria-label="Target server port"
@@ -391,8 +437,8 @@ export function SessionForm({
               type="number"
               min={1}
               max={65535}
-              placeholder="Port"
-              value={bastionPort === DEFAULT_SSH_PORT ? '' : bastionPort}
+              placeholder="22"
+              value={bastionPort}
               onChange={(e) => setBastionPort(e.target.value ? Number(e.target.value) : DEFAULT_SSH_PORT)}
               className="w-16 min-w-0 shrink-0 rounded border border-zinc-600 bg-zinc-800 px-2 py-2 text-sm text-zinc-100 placeholder-zinc-500 focus:border-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-500"
               aria-label="Bastion server port"
