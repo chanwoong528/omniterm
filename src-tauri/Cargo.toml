@@ -27,7 +27,10 @@ tauri-plugin-dialog = "2"
 # openssl-sys vendored: 크로스 컴파일 시 시스템 OpenSSL 불필요 (전체 트리에서 사용)
 openssl-sys = { version = "0.9", features = ["vendored"] }
 # vendored-openssl: ssh2/libssh2-sys가 위 openssl-sys(vendored) 사용
-ssh2 = { version = "0.9", features = ["vendored-openssl"] }
+# openssl-on-win32: Windows에서도 WinCNG 대신 OpenSSL 백엔드 사용 —
+# WinCNG는 ed25519/ECDSA 호스트키·curve25519 KEX 미지원이라 최신 서버와
+# KEX 실패("Unable to exchange encryption keys", Session(-5))가 발생한다.
+ssh2 = { version = "0.9", features = ["vendored-openssl", "openssl-on-win32"] }
 uuid = { version = "1.0", features = ["v4"] }
 base64 = "0.22"
 libc = "0.2"

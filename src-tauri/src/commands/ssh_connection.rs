@@ -229,9 +229,21 @@ fn is_safe_ssh_word(value: &str) -> bool {
             .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '-' | '_' | ':'))
 }
 
-/// POSIX single-quote escaping for the key path inside ProxyCommand.
-fn shell_quote_single(value: &str) -> String {
-    format!("'{}'", value.replace('\'', r"'\''"))
+/// Quotes the key path for ProxyCommand. The shell that runs ProxyCommand
+/// differs per platform: /bin/sh on unix (POSIX single quotes), but cmd.exe
+/// on Win32-OpenSSH, which treats single quotes as literal characters — the
+/// path must be double-quoted there or ssh reads `-i 'C:/...'` verbatim.
+#[cfg(not(windows))]
+fn quote_proxy_key_path(value: &str) -> Result<String, String> {
+    Ok(format!("'{}'", value.replace('\'', r"'\''")))
+}
+
+#[cfg(windows)]
+fn quote_proxy_key_path(value: &str) -> Result<String, String> {
+    if value.contains('"') {
+        return Err("Key path contains unsupported characters.".into());
+    }
+    Ok(format!("\"{}\"", value))
 }
 
 const TEST_SSH_TIMEOUT: Duration = Duration::from_secs(45);
@@ -323,7 +335,7 @@ pub async fn test_ssh_connection(
         }
         let proxy_cmd = format!(
             "ssh -W %h:%p -o BatchMode=yes -o ConnectTimeout=15 -i {} -p {} {}@{}",
-            shell_quote_single(bastion_key),
+            quote_proxy_key_path(bastion_key)?,
             b_port,
             b_user,
             b_host
