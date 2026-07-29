@@ -17,6 +17,8 @@ pub fn run() {
         .manage(ssh_manager)
         .manage(shell_manager)
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_process::init())
         .invoke_handler(tauri::generate_handler![
             commands::ssh_connection::establish_ssh_connection,
             commands::ssh_connection::test_ssh_connection,

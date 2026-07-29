@@ -24,6 +24,8 @@ log = "0.4"
 tauri = { version = "2.10.3", features = [] }
 tauri-plugin-log = "2"
 tauri-plugin-dialog = "2"
+tauri-plugin-updater = "2"
+tauri-plugin-process = "2"
 # openssl-sys vendored: 크로스 컴파일 시 시스템 OpenSSL 불필요 (전체 트리에서 사용)
 openssl-sys = { version = "0.9", features = ["vendored"] }
 # vendored-openssl: ssh2/libssh2-sys가 위 openssl-sys(vendored) 사용
