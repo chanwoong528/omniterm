@@ -6,6 +6,10 @@ import tailwindcss from '@tailwindcss/vite';
 export default defineConfig({
   site: 'https://chanwoong528.github.io',
   base: '/omniterm',
+  i18n: {
+    defaultLocale: 'ko',
+    locales: ['ko', 'en'],
+  },
   vite: {
     plugins: [tailwindcss()],
   },

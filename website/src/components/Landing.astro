@@ -1,0 +1,235 @@
+---
+import '../styles/global.css';
+import { translations, type Lang } from '../i18n';
+
+interface Props {
+  lang: Lang;
+}
+const { lang } = Astro.props;
+const t = translations[lang];
+
+const base = import.meta.env.BASE_URL.replace(/\/$/, '');
+const REPO_URL = 'https://github.com/chanwoong528/omniterm';
+const RELEASES_URL = `${REPO_URL}/releases`;
+const LATEST_URL = `${REPO_URL}/releases/latest`;
+
+const SITE = 'https://chanwoong528.github.io';
+const koUrl = `${SITE}${base}/`;
+const enUrl = `${SITE}${base}/en/`;
+const homeHref = lang === 'en' ? `${base}/en/` : `${base}/`;
+---
+
+<html lang={lang}>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{t.title}</title>
+    <meta name="description" content={t.description} />
+    <link rel="icon" type="image/png" href={`${base}/favicon.png`} />
+    <link rel="canonical" href={lang === 'en' ? enUrl : koUrl} />
+    <link rel="alternate" hreflang="ko" href={koUrl} />
+    <link rel="alternate" hreflang="en" href={enUrl} />
+    <link rel="alternate" hreflang="x-default" href={koUrl} />
+    <meta property="og:title" content={t.title} />
+    <meta property="og:description" content={t.description} />
+    <meta property="og:type" content="website" />
+    <meta property="og:locale" content={lang === 'en' ? 'en_US' : 'ko_KR'} />
+  </head>
+  <body class="bg-zinc-950 text-zinc-100 antialiased">
+    <!-- Nav -->
+    <header class="sticky top-0 z-10 border-b border-zinc-800/80 bg-zinc-950/80 backdrop-blur">
+      <nav class="mx-auto flex max-w-5xl items-center justify-between px-6 py-3.5">
+        <a href={homeHref} class="flex items-center gap-2.5 font-semibold tracking-tight">
+          <img src={`${base}/favicon.png`} alt="" class="h-6 w-6 rounded" />
+          OmniTerm
+        </a>
+        <div class="flex items-center gap-5 text-sm text-zinc-400">
+          <a href="#features" class="transition hover:text-zinc-100">{t.navFeatures}</a>
+          <a href="#download" class="transition hover:text-zinc-100">{t.navDownload}</a>
+          <a href={REPO_URL} target="_blank" rel="noopener" class="flex items-center gap-1.5 transition hover:text-zinc-100">
+            <svg viewBox="0 0 16 16" class="h-4 w-4 fill-current" aria-hidden="true">
+              <path
+                d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27s1.36.09 2 .27c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8Z"
+              ></path>
+            </svg>
+            GitHub
+          </a>
+          <span class="flex items-center gap-1.5 border-l border-zinc-800 pl-5 text-xs font-medium" aria-label="Language">
+            <a
+              href={`${base}/`}
+              class={lang === 'ko' ? 'text-zinc-100' : 'text-zinc-500 transition hover:text-zinc-200'}
+              aria-current={lang === 'ko' ? 'page' : undefined}>KO</a
+            >
+            <span class="text-zinc-700">/</span>
+            <a
+              href={`${base}/en/`}
+              class={lang === 'en' ? 'text-zinc-100' : 'text-zinc-500 transition hover:text-zinc-200'}
+              aria-current={lang === 'en' ? 'page' : undefined}>EN</a
+            >
+          </span>
+        </div>
+      </nav>
+    </header>
+
+    <main>
+      <!-- Hero -->
+      <section class="mx-auto max-w-5xl px-6 pt-20 pb-14 text-center">
+        <p
+          class="mx-auto mb-5 inline-flex items-center gap-2 rounded-full border border-zinc-800 bg-zinc-900 px-3 py-1 text-xs text-zinc-400"
+        >
+          <span class="h-1.5 w-1.5 rounded-full bg-emerald-400"></span>
+          <span id="version">{t.badgeLatest}</span> · {t.badgeSuffix}
+        </p>
+        <h1 class="mx-auto max-w-3xl text-4xl font-bold tracking-tight text-balance sm:text-5xl">
+          {t.heroLine}<br class="sm:hidden" />
+          <span class="bg-gradient-to-r from-emerald-400 to-cyan-400 bg-clip-text text-transparent">{t.heroGradient}</span>
+        </h1>
+        <p class="mx-auto mt-5 max-w-2xl text-lg text-zinc-400 text-pretty">
+          {t.heroSub}
+        </p>
+
+        <div id="download" class="mt-9 flex flex-col items-center gap-3">
+          <div class="flex flex-wrap items-center justify-center gap-3">
+            <a
+              id="btn-mac"
+              href={LATEST_URL}
+              class="rounded-lg bg-zinc-100 px-6 py-3 font-semibold text-zinc-900 shadow-lg transition hover:bg-white"
+            >
+              {t.btnMac}
+            </a>
+            <a
+              id="btn-win"
+              href={LATEST_URL}
+              class="rounded-lg border border-zinc-700 bg-zinc-900 px-6 py-3 font-semibold transition hover:border-zinc-500"
+            >
+              {t.btnWin}
+            </a>
+          </div>
+          <p class="text-xs text-zinc-500">
+            <span id="sub-links" data-intel-label={t.intelLabel}></span>
+            <a href={RELEASES_URL} target="_blank" rel="noopener" class="underline decoration-zinc-700 underline-offset-2 hover:text-zinc-300">
+              {t.allReleases}
+            </a>
+          </p>
+        </div>
+      </section>
+
+      <!-- Screenshot -->
+      <section class="mx-auto max-w-5xl px-6 pb-20">
+        <div class="overflow-hidden rounded-xl border border-zinc-800 bg-zinc-900 shadow-2xl shadow-emerald-950/20">
+          <img src={`${base}/screenshot.png`} alt={t.screenshotAlt} class="w-full" loading="lazy" />
+        </div>
+      </section>
+
+      <!-- Features -->
+      <section id="features" class="border-t border-zinc-900 bg-zinc-950">
+        <div class="mx-auto max-w-5xl px-6 py-20">
+          <h2 class="text-center text-3xl font-bold tracking-tight">{t.featuresTitle}</h2>
+          <p class="mt-3 text-center text-zinc-400">{t.featuresSub}</p>
+          <div class="mt-12 grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
+            {
+              t.features.map((f) => (
+                <div class="rounded-xl border border-zinc-800 bg-zinc-900/50 p-6 transition hover:border-zinc-700">
+                  <div class="text-2xl">{f.icon}</div>
+                  <h3 class="mt-3 font-semibold">{f.title}</h3>
+                  <p class="mt-2 text-sm leading-relaxed text-zinc-400">{f.desc}</p>
+                </div>
+              ))
+            }
+          </div>
+        </div>
+      </section>
+
+      <!-- Install note -->
+      <section class="border-t border-zinc-900">
+        <div class="mx-auto max-w-3xl px-6 py-16">
+          <h2 class="text-xl font-bold">{t.installTitle}</h2>
+          <p class="mt-3 text-sm leading-relaxed text-zinc-400">
+            {t.installBody}
+          </p>
+          <ul class="mt-4 space-y-2 text-sm text-zinc-400">
+            <li class="flex gap-2">
+              <span class="text-zinc-500"></span>
+              <span>
+                <strong class="text-zinc-200">macOS</strong> {t.installMacPre}
+                <code class="rounded bg-zinc-800 px-1.5 py-0.5 font-mono text-xs text-emerald-300">xattr -cr /Applications/OmniTerm.app</code>
+                {t.installMacPost}
+                <a
+                  href={`${REPO_URL}#손상됨-경고-없이-실행하기`}
+                  target="_blank"
+                  rel="noopener"
+                  class="underline decoration-zinc-700 underline-offset-2 hover:text-zinc-200">{t.installMacLink}</a
+                >
+              </span>
+            </li>
+            <li class="flex gap-2">
+              <span class="text-zinc-500">🪟</span>
+              <span>
+                <strong class="text-zinc-200">Windows</strong> {t.installWinPre}
+                <strong class="text-zinc-200">{t.installWinStrong}</strong>{t.installWinPost}
+              </span>
+            </li>
+          </ul>
+        </div>
+      </section>
+    </main>
+
+    <footer class="border-t border-zinc-900">
+      <div class="mx-auto flex max-w-5xl flex-col items-center justify-between gap-3 px-6 py-8 text-sm text-zinc-500 sm:flex-row">
+        <p>{t.footerMade}</p>
+        <a href={REPO_URL} target="_blank" rel="noopener" class="transition hover:text-zinc-300">{t.footerGithub}</a>
+      </div>
+    </footer>
+
+    <script>
+      // 최신 릴리스에서 OS별 설치 파일 링크를 가져와 버튼에 연결
+      const REPO = 'chanwoong528/omniterm';
+
+      async function wireDownloads() {
+        const btnMac = document.getElementById('btn-mac') as HTMLAnchorElement | null;
+        const btnWin = document.getElementById('btn-win') as HTMLAnchorElement | null;
+        const subLinks = document.getElementById('sub-links');
+        const versionEl = document.getElementById('version');
+        if (!btnMac || !btnWin) return;
+
+        // 방문자 OS에 맞는 버튼을 앞으로 (기본은 macOS 우선)
+        const ua = navigator.userAgent;
+        if (/Windows/i.test(ua)) {
+          btnWin.classList.remove('border', 'border-zinc-700', 'bg-zinc-900', 'hover:border-zinc-500');
+          btnWin.classList.add('bg-zinc-100', 'text-zinc-900', 'shadow-lg', 'hover:bg-white');
+          btnMac.classList.remove('bg-zinc-100', 'text-zinc-900', 'shadow-lg', 'hover:bg-white');
+          btnMac.classList.add('border', 'border-zinc-700', 'bg-zinc-900', 'hover:border-zinc-500');
+          btnWin.parentElement?.prepend(btnWin);
+        }
+
+        try {
+          const res = await fetch(`https://api.github.com/repos/${REPO}/releases/latest`);
+          if (!res.ok) return;
+          const release = await res.json();
+          const assets: { name: string; browser_download_url: string }[] = release.assets ?? [];
+          const find = (re: RegExp) => assets.find((a) => re.test(a.name))?.browser_download_url;
+
+          const macArm = find(/aarch64\.dmg$/i);
+          const macIntel = find(/x64\.dmg$/i);
+          const winSetup = find(/setup\.exe$/i) ?? find(/\.exe$/i) ?? find(/\.msi$/i);
+
+          if (versionEl && release.tag_name) versionEl.textContent = release.tag_name;
+          if (macArm) btnMac.href = macArm;
+          if (winSetup) btnWin.href = winSetup;
+
+          if (subLinks && macIntel) {
+            const a = document.createElement('a');
+            a.href = macIntel;
+            a.textContent = subLinks.dataset.intelLabel ?? 'Intel Mac';
+            a.className = 'underline decoration-zinc-700 underline-offset-2 hover:text-zinc-300';
+            subLinks.append(a, ' · ');
+          }
+        } catch {
+          // API 실패 시 버튼은 releases/latest 페이지로 유지
+        }
+      }
+
+      wireDownloads();
+    </script>
+  </body>
+</html>
