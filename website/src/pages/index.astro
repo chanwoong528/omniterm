@@ -1,0 +1,268 @@
+---
+import '../styles/global.css';
+
+const base = import.meta.env.BASE_URL.replace(/\/$/, '');
+const REPO_URL = 'https://github.com/chanwoong528/omniterm';
+const RELEASES_URL = `${REPO_URL}/releases`;
+const LATEST_URL = `${REPO_URL}/releases/latest`;
+
+const features = [
+  {
+    icon: '🔐',
+    title: 'SSH 직접 / 바스천 접속',
+    desc: '직접 접속은 물론 바스천(점프 호스트)을 거치는 접속까지 지원합니다. ProxyCommand 설정 없이 GUI에서 바로 구성하세요.',
+  },
+  {
+    icon: '🗂️',
+    title: '터미널 탭',
+    desc: '여러 서버 세션을 탭으로 열어 한 창에서 오가며 작업할 수 있습니다. xterm.js 기반의 빠른 렌더링.',
+  },
+  {
+    icon: '📁',
+    title: 'SFTP 파일 탐색기',
+    desc: '원격 파일을 탐색하고 드래그 앤 드롭으로 업로드하세요. 터미널 옆에 나란히 띄워 놓고 쓸 수 있습니다.',
+  },
+  {
+    icon: '🔑',
+    title: '키 매니저',
+    desc: 'SSH 키를 앱 안에서 등록·관리합니다. 접속마다 키 경로를 찾아 헤맬 필요가 없습니다.',
+  },
+  {
+    icon: '💾',
+    title: '세션 저장',
+    desc: '접속 정보를 저장해 두고 클릭 한 번으로 다시 연결합니다. 자주 쓰는 서버 목록을 한눈에.',
+  },
+  {
+    icon: '🖥️',
+    title: 'macOS & Windows',
+    desc: 'Tauri 기반 네이티브 앱으로 두 플랫폼에서 동일한 경험을 제공합니다. 가볍고 빠릅니다.',
+  },
+];
+---
+
+<html lang="ko">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>OmniTerm — 통합 터미널 & SFTP 클라이언트</title>
+    <meta
+      name="description"
+      content="macOS와 Windows를 위한 통합 터미널 & SFTP 클라이언트. SSH 직접/바스천 접속, 터미널 탭, 드래그 앤 드롭 SFTP, 키 매니저, 세션 저장."
+    />
+    <link rel="icon" type="image/png" href={`${base}/favicon.png`} />
+    <meta property="og:title" content="OmniTerm — 통합 터미널 & SFTP 클라이언트" />
+    <meta
+      property="og:description"
+      content="SSH 직접/바스천 접속, 터미널 탭, 드래그 앤 드롭 SFTP, 키 매니저, 세션 저장. macOS & Windows."
+    />
+    <meta property="og:type" content="website" />
+  </head>
+  <body class="bg-zinc-950 text-zinc-100 antialiased">
+    <!-- Nav -->
+    <header class="sticky top-0 z-10 border-b border-zinc-800/80 bg-zinc-950/80 backdrop-blur">
+      <nav class="mx-auto flex max-w-5xl items-center justify-between px-6 py-3.5">
+        <a href={`${base}/`} class="flex items-center gap-2.5 font-semibold tracking-tight">
+          <img src={`${base}/favicon.png`} alt="" class="h-6 w-6 rounded" />
+          OmniTerm
+        </a>
+        <div class="flex items-center gap-5 text-sm text-zinc-400">
+          <a href="#features" class="transition hover:text-zinc-100">기능</a>
+          <a href="#download" class="transition hover:text-zinc-100">다운로드</a>
+          <a href={REPO_URL} target="_blank" rel="noopener" class="flex items-center gap-1.5 transition hover:text-zinc-100">
+            <svg viewBox="0 0 16 16" class="h-4 w-4 fill-current" aria-hidden="true">
+              <path
+                d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27s1.36.09 2 .27c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8Z"
+              ></path>
+            </svg>
+            GitHub
+          </a>
+        </div>
+      </nav>
+    </header>
+
+    <main>
+      <!-- Hero -->
+      <section class="mx-auto max-w-5xl px-6 pt-20 pb-14 text-center">
+        <p
+          class="mx-auto mb-5 inline-flex items-center gap-2 rounded-full border border-zinc-800 bg-zinc-900 px-3 py-1 text-xs text-zinc-400"
+        >
+          <span class="h-1.5 w-1.5 rounded-full bg-emerald-400"></span>
+          <span id="version">최신 버전</span> · 무료 · 오픈 배포
+        </p>
+        <h1 class="mx-auto max-w-3xl text-4xl font-bold tracking-tight text-balance sm:text-5xl">
+          서버 작업의 모든 것,<br class="sm:hidden" />
+          <span class="bg-gradient-to-r from-emerald-400 to-cyan-400 bg-clip-text text-transparent">터미널 하나로.</span>
+        </h1>
+        <p class="mx-auto mt-5 max-w-2xl text-lg text-zinc-400 text-pretty">
+          OmniTerm은 macOS와 Windows를 위한 통합 터미널 &amp; SFTP 클라이언트입니다.
+          SSH 접속, 파일 전송, 키 관리를 하나의 앱에서 해결하세요.
+        </p>
+
+        <div id="download" class="mt-9 flex flex-col items-center gap-3">
+          <div class="flex flex-wrap items-center justify-center gap-3">
+            <a
+              id="btn-mac"
+              href={LATEST_URL}
+              class="rounded-lg bg-zinc-100 px-6 py-3 font-semibold text-zinc-900 shadow-lg transition hover:bg-white"
+            >
+               macOS용 다운로드
+            </a>
+            <a
+              id="btn-win"
+              href={LATEST_URL}
+              class="rounded-lg border border-zinc-700 bg-zinc-900 px-6 py-3 font-semibold transition hover:border-zinc-500"
+            >
+              🪟 Windows용 다운로드
+            </a>
+          </div>
+          <p class="text-xs text-zinc-500">
+            <span id="sub-links"></span>
+            <a href={RELEASES_URL} target="_blank" rel="noopener" class="underline decoration-zinc-700 underline-offset-2 hover:text-zinc-300">
+              모든 릴리스 보기
+            </a>
+          </p>
+        </div>
+      </section>
+
+      <!-- Screenshot -->
+      <section class="mx-auto max-w-5xl px-6 pb-20">
+        <div class="overflow-hidden rounded-xl border border-zinc-800 bg-zinc-900 shadow-2xl shadow-emerald-950/20">
+          <!-- 실제 스크린샷이 준비되면 아래 mock 대신 이 이미지를 사용:
+          <img src={`${base}/screenshot.png`} alt="OmniTerm 스크린샷 — 터미널과 SFTP 패널" class="w-full" />
+          -->
+          <div class="flex items-center gap-1.5 border-b border-zinc-800 px-4 py-2.5">
+            <span class="h-3 w-3 rounded-full bg-red-500/80"></span>
+            <span class="h-3 w-3 rounded-full bg-yellow-500/80"></span>
+            <span class="h-3 w-3 rounded-full bg-green-500/80"></span>
+            <span class="ml-3 rounded-md bg-zinc-800 px-3 py-0.5 text-xs text-zinc-400">prod-web-01</span>
+            <span class="rounded-md px-3 py-0.5 text-xs text-zinc-600">bastion-db</span>
+            <span class="rounded-md px-3 py-0.5 text-xs text-zinc-600">+</span>
+          </div>
+          <div class="grid sm:grid-cols-[1fr_220px]">
+            <pre class="overflow-x-auto p-5 font-mono text-sm leading-relaxed text-zinc-300"><span class="text-emerald-400">user@prod-web-01</span>:<span class="text-cyan-400">~</span>$ tail -f /var/log/nginx/access.log
+203.0.113.7 - - [01/Aug/2026] "GET /api/health HTTP/1.1" 200
+203.0.113.9 - - [01/Aug/2026] "GET /api/users HTTP/1.1" 200
+<span class="text-emerald-400">user@prod-web-01</span>:<span class="text-cyan-400">~</span>$ <span class="animate-pulse">▍</span></pre>
+            <div class="hidden border-l border-zinc-800 p-4 text-xs text-zinc-500 sm:block">
+              <p class="mb-2 font-semibold text-zinc-400">SFTP · /var/www</p>
+              <ul class="space-y-1.5 font-mono">
+                <li>📁 releases/</li>
+                <li>📁 shared/</li>
+                <li>📄 current → releases/42</li>
+                <li>📄 .env</li>
+              </ul>
+              <p class="mt-4 rounded border border-dashed border-zinc-700 p-2 text-center text-zinc-600">
+                파일을 끌어다 놓아 업로드
+              </p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Features -->
+      <section id="features" class="border-t border-zinc-900 bg-zinc-950">
+        <div class="mx-auto max-w-5xl px-6 py-20">
+          <h2 class="text-center text-3xl font-bold tracking-tight">필요한 기능만, 제대로</h2>
+          <p class="mt-3 text-center text-zinc-400">서버 작업 흐름을 끊는 도구 전환을 없앴습니다.</p>
+          <div class="mt-12 grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
+            {
+              features.map((f) => (
+                <div class="rounded-xl border border-zinc-800 bg-zinc-900/50 p-6 transition hover:border-zinc-700">
+                  <div class="text-2xl">{f.icon}</div>
+                  <h3 class="mt-3 font-semibold">{f.title}</h3>
+                  <p class="mt-2 text-sm leading-relaxed text-zinc-400">{f.desc}</p>
+                </div>
+              ))
+            }
+          </div>
+        </div>
+      </section>
+
+      <!-- Install note -->
+      <section class="border-t border-zinc-900">
+        <div class="mx-auto max-w-3xl px-6 py-16">
+          <h2 class="text-xl font-bold">설치 시 보안 경고가 나오나요?</h2>
+          <p class="mt-3 text-sm leading-relaxed text-zinc-400">
+            OmniTerm은 아직 코드 서명이 되어 있지 않아, 처음 실행할 때 운영체제 보안 경고가 표시될 수 있습니다.
+            앱이 손상되었거나 위험한 것이 아니라, 인터넷에서 받은 미서명 앱에 대한 기본 정책입니다.
+          </p>
+          <ul class="mt-4 space-y-2 text-sm text-zinc-400">
+            <li class="flex gap-2">
+              <span class="text-zinc-500"></span>
+              <span>
+                <strong class="text-zinc-200">macOS</strong> — "손상되었기 때문에 열 수 없습니다" 경고가 뜨면
+                터미널에서 <code class="rounded bg-zinc-800 px-1.5 py-0.5 font-mono text-xs text-emerald-300">xattr -cr /Applications/OmniTerm.app</code> 실행 후 다시 여세요.
+                <a href={`${REPO_URL}#손상됨-경고-없이-실행하기`} target="_blank" rel="noopener" class="underline decoration-zinc-700 underline-offset-2 hover:text-zinc-200">자세한 안내</a>
+              </span>
+            </li>
+            <li class="flex gap-2">
+              <span class="text-zinc-500">🪟</span>
+              <span>
+                <strong class="text-zinc-200">Windows</strong> — "PC를 보호했습니다" 화면에서
+                <strong class="text-zinc-200">추가 정보 → 실행</strong>을 선택하면 됩니다.
+              </span>
+            </li>
+          </ul>
+        </div>
+      </section>
+    </main>
+
+    <footer class="border-t border-zinc-900">
+      <div class="mx-auto flex max-w-5xl flex-col items-center justify-between gap-3 px-6 py-8 text-sm text-zinc-500 sm:flex-row">
+        <p>OmniTerm — Tauri · React · Rust로 만들었습니다.</p>
+        <a href={REPO_URL} target="_blank" rel="noopener" class="transition hover:text-zinc-300">GitHub에서 보기</a>
+      </div>
+    </footer>
+
+    <script>
+      // 최신 릴리스에서 OS별 설치 파일 링크를 가져와 버튼에 연결
+      const REPO = 'chanwoong528/omniterm';
+
+      async function wireDownloads() {
+        const btnMac = document.getElementById('btn-mac') as HTMLAnchorElement | null;
+        const btnWin = document.getElementById('btn-win') as HTMLAnchorElement | null;
+        const subLinks = document.getElementById('sub-links');
+        const versionEl = document.getElementById('version');
+        if (!btnMac || !btnWin) return;
+
+        // 방문자 OS에 맞는 버튼을 앞으로 (기본은 macOS 우선)
+        const ua = navigator.userAgent;
+        if (/Windows/i.test(ua)) {
+          btnWin.classList.remove('border', 'border-zinc-700', 'bg-zinc-900', 'hover:border-zinc-500');
+          btnWin.classList.add('bg-zinc-100', 'text-zinc-900', 'shadow-lg', 'hover:bg-white');
+          btnMac.classList.remove('bg-zinc-100', 'text-zinc-900', 'shadow-lg', 'hover:bg-white');
+          btnMac.classList.add('border', 'border-zinc-700', 'bg-zinc-900', 'hover:border-zinc-500');
+          btnWin.parentElement?.prepend(btnWin);
+        }
+
+        try {
+          const res = await fetch(`https://api.github.com/repos/${REPO}/releases/latest`);
+          if (!res.ok) return;
+          const release = await res.json();
+          const assets: { name: string; browser_download_url: string }[] = release.assets ?? [];
+          const find = (re: RegExp) => assets.find((a) => re.test(a.name))?.browser_download_url;
+
+          const macArm = find(/aarch64\.dmg$/i);
+          const macIntel = find(/x64\.dmg$/i);
+          const winSetup = find(/setup\.exe$/i) ?? find(/\.msi$/i);
+
+          if (versionEl && release.tag_name) versionEl.textContent = release.tag_name;
+          if (macArm) btnMac.href = macArm;
+          if (winSetup) btnWin.href = winSetup;
+
+          if (subLinks && macIntel) {
+            const a = document.createElement('a');
+            a.href = macIntel;
+            a.textContent = 'Intel Mac용 다운로드';
+            a.className = 'underline decoration-zinc-700 underline-offset-2 hover:text-zinc-300';
+            subLinks.append(a, ' · ');
+          }
+        } catch {
+          // API 실패 시 버튼은 releases/latest 페이지로 유지
+        }
+      }
+
+      wireDownloads();
+    </script>
+  </body>
+</html>

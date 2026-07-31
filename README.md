@@ -8,7 +8,8 @@ macOS 및 Windows용 통합 터미널 & SFTP 클라이언트. SSH(직접/바스�
 
 ## 다운로드 (설치 파일)
 
-- **[Releases](https://github.com/YOUR_USERNAME/OmniTerm/releases)** 에서 버전별 빌드 파일을 받을 수 있습니다.
+- **홈페이지: [chanwoong528.github.io/omniterm](https://chanwoong528.github.io/omniterm)** 에서 OS에 맞는 설치 파일을 바로 받을 수 있습니다.
+- 또는 **[Releases](https://github.com/chanwoong528/omniterm/releases)** 에서 버전별 빌드 파일을 받을 수 있습니다.
 - **macOS – Apple Silicon (M1/M2/M3)** → `OmniTerm_*_aarch64.dmg`
 - **macOS – Intel** → `OmniTerm_*_x64.dmg`
 - **Windows** → `OmniTerm_*_x64-setup.exe` 또는 `OmniTerm_*_x64.msi`

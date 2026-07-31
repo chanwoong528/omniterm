@@ -4,3 +4,26 @@ body {
   margin: 0;
   overflow: hidden;
 }
+
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgb(255 255 255 / 0.14);
+  border-radius: 9999px;
+  background-clip: padding-box;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgb(255 255 255 / 0.28);
+}
+
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
