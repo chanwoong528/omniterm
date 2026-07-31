@@ -127,35 +127,12 @@ const features = [
       <!-- Screenshot -->
       <section class="mx-auto max-w-5xl px-6 pb-20">
         <div class="overflow-hidden rounded-xl border border-zinc-800 bg-zinc-900 shadow-2xl shadow-emerald-950/20">
-          <!-- 실제 스크린샷이 준비되면 아래 mock 대신 이 이미지를 사용:
-          <img src={`${base}/screenshot.png`} alt="OmniTerm 스크린샷 — 터미널과 SFTP 패널" class="w-full" />
-          -->
-          <div class="flex items-center gap-1.5 border-b border-zinc-800 px-4 py-2.5">
-            <span class="h-3 w-3 rounded-full bg-red-500/80"></span>
-            <span class="h-3 w-3 rounded-full bg-yellow-500/80"></span>
-            <span class="h-3 w-3 rounded-full bg-green-500/80"></span>
-            <span class="ml-3 rounded-md bg-zinc-800 px-3 py-0.5 text-xs text-zinc-400">prod-web-01</span>
-            <span class="rounded-md px-3 py-0.5 text-xs text-zinc-600">bastion-db</span>
-            <span class="rounded-md px-3 py-0.5 text-xs text-zinc-600">+</span>
-          </div>
-          <div class="grid sm:grid-cols-[1fr_220px]">
-            <pre class="overflow-x-auto p-5 font-mono text-sm leading-relaxed text-zinc-300"><span class="text-emerald-400">user@prod-web-01</span>:<span class="text-cyan-400">~</span>$ tail -f /var/log/nginx/access.log
-203.0.113.7 - - [01/Aug/2026] "GET /api/health HTTP/1.1" 200
-203.0.113.9 - - [01/Aug/2026] "GET /api/users HTTP/1.1" 200
-<span class="text-emerald-400">user@prod-web-01</span>:<span class="text-cyan-400">~</span>$ <span class="animate-pulse">▍</span></pre>
-            <div class="hidden border-l border-zinc-800 p-4 text-xs text-zinc-500 sm:block">
-              <p class="mb-2 font-semibold text-zinc-400">SFTP · /var/www</p>
-              <ul class="space-y-1.5 font-mono">
-                <li>📁 releases/</li>
-                <li>📁 shared/</li>
-                <li>📄 current → releases/42</li>
-                <li>📄 .env</li>
-              </ul>
-              <p class="mt-4 rounded border border-dashed border-zinc-700 p-2 text-center text-zinc-600">
-                파일을 끌어다 놓아 업로드
-              </p>
-            </div>
-          </div>
+          <img
+            src={`${base}/screenshot.png`}
+            alt="OmniTerm 스크린샷 — 세션 사이드바, SFTP 탐색기, 접속된 터미널"
+            class="w-full"
+            loading="lazy"
+          />
         </div>
       </section>
 
