@@ -1,6 +1,6 @@
 [package]
 name = "app"
-version = "0.1.15"
+version = "0.2.1"
 description = "A Tauri App"
 authors = ["you"]
 license = ""
@@ -24,6 +24,8 @@ log = "0.4"
 tauri = { version = "2.10.3", features = [] }
 tauri-plugin-log = "2"
 tauri-plugin-dialog = "2"
+tauri-plugin-updater = "2"
+tauri-plugin-process = "2"
 # openssl-sys vendored: 크로스 컴파일 시 시스템 OpenSSL 불필요 (전체 트리에서 사용)
 openssl-sys = { version = "0.9", features = ["vendored"] }
 # vendored-openssl: ssh2/libssh2-sys가 위 openssl-sys(vendored) 사용
@@ -34,3 +36,6 @@ ssh2 = { version = "0.9", features = ["vendored-openssl", "openssl-on-win32"] }
 uuid = { version = "1.0", features = ["v4"] }
 base64 = "0.22"
 libc = "0.2"
+# MobaXterm .mxtsessions 가져오기: 한국어 Windows에서 CP949(EUC-KR)로
+# 저장된 파일의 한글 폴더/키 경로를 복원하기 위한 디코더
+encoding_rs = "0.8"

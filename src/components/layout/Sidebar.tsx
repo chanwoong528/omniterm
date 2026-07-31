@@ -7,6 +7,7 @@ import { useSessionStore } from '../../stores/sessionStore';
 import type { SavedSession } from '../../types/session';
 import { SessionForm } from '../../domains/session/components/SessionForm';
 import { SessionList } from '../../domains/session/components/SessionList';
+import { ImportMxtSessionsButton } from '../../domains/session/components/ImportMxtSessionsButton';
 import { KeyManagerPanel } from '../../domains/key-manager/components/KeyManagerPanel';
 
 type SidebarTab = 'sessions' | 'keys';
@@ -109,7 +110,7 @@ export function Sidebar({ widthPx }: SidebarProps) {
     const title = `${target.username}@${target.host}`;
     addTab(runtimeSessionId, title);
     markConnected(session.id);
-    showSuccessToast('연결됨. 터미널 탭이 열렸습니다.');
+    showSuccessToast('Connected. Terminal tab opened.');
     return true;
   };
 
@@ -209,6 +210,7 @@ export function Sidebar({ widthPx }: SidebarProps) {
         args.saveSession?.label.trim() ||
         existing?.label ||
         `${args.target.username}@${args.target.host}`,
+      folder: existing?.folder,
       target: sanitizeTarget,
       useBastion: args.useBastion,
       bastion: sanitizeBastion,
@@ -221,7 +223,7 @@ export function Sidebar({ widthPx }: SidebarProps) {
     if (sessionId) {
       const title = `${args.target.username}@${args.target.host}`;
       addTab(sessionId, title);
-      showSuccessToast('연결됨. 세션이 자동 저장되었습니다.');
+      showSuccessToast('Connected. Session saved automatically.');
       markConnected(saved.id);
       setActiveSessionId(saved.id);
     }
@@ -265,38 +267,13 @@ export function Sidebar({ widthPx }: SidebarProps) {
           hidden={activeTab !== 'sessions'}
           className="flex min-w-0 flex-col gap-4"
         >
-          {connectionError && (
-            <p className="rounded bg-red-900/30 px-3 py-2 text-sm text-red-300" role="alert">
-              {connectionError}
-            </p>
-          )}
-          {successToastMessage && (
-            <p className="rounded bg-emerald-900/30 px-3 py-2 text-sm text-emerald-300" role="status">
-              {successToastMessage}
-            </p>
-          )}
-          {connectionLog.length > 0 && (
-            <ConnectionLog
-              lines={connectionLog}
-              isConnecting={isConnecting}
-              isTesting={isTesting}
-              onClear={clearLog}
-              onAbort={abortConnection}
-            />
-          )}
-          <SessionForm
-            key={activeSavedSessionId ?? 'new'}
-            onConnect={handleConnect}
-            onTestConnection={async (args) => {
-              await testConnection(args.target, args.useBastion, args.bastion);
-            }}
-            isConnecting={isConnecting}
-            isTesting={isTesting}
-          />
-          <div className="border-t border-zinc-800 pt-3">
-            <h3 className="mb-2 text-xs font-medium uppercase tracking-wide text-zinc-500">
-              Saved sessions
-            </h3>
+          <div className="border-b border-zinc-800 pb-3">
+            <div className="mb-2 flex items-center justify-between gap-2">
+              <h3 className="text-xs font-medium uppercase tracking-wide text-zinc-500">
+                Saved sessions
+              </h3>
+              <ImportMxtSessionsButton />
+            </div>
             {passwordPromptSession && (
               <form
                 onSubmit={onSubmitPasswordPrompt}
@@ -316,7 +293,7 @@ export function Sidebar({ widthPx }: SidebarProps) {
                   return (
                     <>
                 <p className="mb-2 text-xs text-zinc-300">
-                  비밀번호 입력: {passwordPromptSession.label}
+                  Enter password: {passwordPromptSession.label}
                 </p>
                 {showTargetPassword && (
                   <input
@@ -352,7 +329,7 @@ export function Sidebar({ widthPx }: SidebarProps) {
                     disabled={isConnecting}
                     className="rounded bg-zinc-600 px-2 py-1.5 text-xs text-white hover:bg-zinc-500 disabled:opacity-50"
                   >
-                    {isConnecting ? '연결 중…' : '연결'}
+                    {isConnecting ? 'Connecting…' : 'Connect'}
                   </button>
                   <button
                     type="button"
@@ -363,7 +340,7 @@ export function Sidebar({ widthPx }: SidebarProps) {
                     }}
                     className="rounded px-2 py-1.5 text-xs text-zinc-400 hover:bg-zinc-700 hover:text-zinc-200"
                   >
-                    취소
+                    Cancel
                   </button>
                 </div>
                     </>
@@ -373,6 +350,34 @@ export function Sidebar({ widthPx }: SidebarProps) {
             )}
             <SessionList onConnectSavedSession={connectSavedSession} isConnecting={isConnecting} />
           </div>
+          <SessionForm
+            key={activeSavedSessionId ?? 'new'}
+            onConnect={handleConnect}
+            onTestConnection={async (args) => {
+              await testConnection(args.target, args.useBastion, args.bastion);
+            }}
+            isConnecting={isConnecting}
+            isTesting={isTesting}
+          />
+          {connectionError && (
+            <p className="rounded bg-red-900/30 px-3 py-2 text-sm text-red-300" role="alert">
+              {connectionError}
+            </p>
+          )}
+          {successToastMessage && (
+            <p className="rounded bg-emerald-900/30 px-3 py-2 text-sm text-emerald-300" role="status">
+              {successToastMessage}
+            </p>
+          )}
+          {connectionLog.length > 0 && (
+            <ConnectionLog
+              lines={connectionLog}
+              isConnecting={isConnecting}
+              isTesting={isTesting}
+              onClear={clearLog}
+              onAbort={abortConnection}
+            />
+          )}
         </div>
 
         <div

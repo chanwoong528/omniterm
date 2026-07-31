@@ -179,7 +179,7 @@ export function KeyManagerPanel() {
               <KeyListItem
                 keyMeta={keyMeta}
                 onRemove={() => {
-                  void ask(`등록된 키를 삭제할까요?\n${keyMeta.label}`, {
+                  void ask(`Delete this registered key?\n${keyMeta.label}`, {
                     title: 'Delete key',
                     kind: 'warning',
                   }).then((confirmed) => {

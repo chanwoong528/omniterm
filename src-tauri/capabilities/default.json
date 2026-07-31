@@ -16,6 +16,12 @@
     "dialog:allow-open",
     "dialog:allow-save",
     "dialog:allow-ask",
-    "dialog:allow-confirm"
+    "dialog:allow-confirm",
+    "dialog:allow-message",
+    "updater:default",
+    "process:allow-restart",
+    "core:window:allow-toggle-maximize",
+    "core:window:allow-is-decorated",
+    "core:window:allow-set-decorations"
   ]
 }

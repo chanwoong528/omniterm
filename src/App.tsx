@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { TitleBar } from './components/layout/TitleBar';
+import { UpdateBanner } from './components/update/UpdateBanner';
 import { Sidebar } from './components/layout/Sidebar';
 import { MainArea } from './components/layout/MainArea';
+import { MissingKeyModal } from './domains/session/components/MissingKeyModal';
 import {
   ResizeHandle,
   SIDEBAR_DEFAULT_PX,
@@ -65,6 +67,7 @@ function App() {
   return (
     <div className="flex h-screen flex-col overflow-x-hidden bg-zinc-900 text-zinc-100">
       <TitleBar />
+      <UpdateBanner />
       <div className="flex min-h-0 min-w-0 flex-1">
         <Sidebar widthPx={sidebarWidthPx} />
         <ResizeHandle
@@ -73,6 +76,7 @@ function App() {
         />
         <MainArea />
       </div>
+      <MissingKeyModal />
     </div>
   );
 }

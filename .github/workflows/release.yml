@@ -133,6 +133,10 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           # Skip AppleScript DMG styling in CI to avoid bundle_dmg.sh failures (timeout / Finder auth)
           TAURI_BUNDLER_DMG_IGNORE_CI: false
+          # 인앱 자동 업데이트 서명 키 (docs/AUTO-UPDATE.md 참고).
+          # 이 시크릿이 없으면 updater 아티팩트 서명에 실패해 빌드가 깨진다 — 반드시 등록할 것.
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
           tagName: v__VERSION__
           releaseName: 'OmniTerm v__VERSION__'
