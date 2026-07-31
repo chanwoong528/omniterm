@@ -6,6 +6,10 @@ on:
   push:
     branches:
       - main
+    # 웹사이트·CI만 바뀐 푸시는 앱 버전을 올리지 않음
+    paths-ignore:
+      - 'website/**'
+      - '.github/**'
 
 jobs:
   bump:
