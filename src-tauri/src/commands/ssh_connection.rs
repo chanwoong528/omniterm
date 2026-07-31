@@ -304,6 +304,9 @@ pub async fn test_ssh_connection(
 
     let mut cmd = Command::new("ssh");
     cmd.arg("-i").arg(key_path);
+    // 실제 연결(libssh2)은 -i로 지정한 파일만 쓰므로, 테스트도 agent 키가 아닌
+    // 선택된 키 파일만 검증해야 결과가 일치한다.
+    cmd.arg("-o").arg("IdentitiesOnly=yes");
     cmd.arg("-o").arg("ConnectTimeout=15");
     cmd.arg("-o").arg("BatchMode=yes");
     cmd.arg("-o").arg("StrictHostKeyChecking=accept-new");
@@ -334,7 +337,7 @@ pub async fn test_ssh_connection(
             return Err("Bastion host/username contains unsupported characters.".into());
         }
         let proxy_cmd = format!(
-            "ssh -W %h:%p -o BatchMode=yes -o ConnectTimeout=15 -i {} -p {} {}@{}",
+            "ssh -W %h:%p -o IdentitiesOnly=yes -o BatchMode=yes -o ConnectTimeout=15 -i {} -p {} {}@{}",
             quote_proxy_key_path(bastion_key)?,
             b_port,
             b_user,

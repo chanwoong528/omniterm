@@ -95,22 +95,22 @@ export function UpdateBanner() {
         <>
           <ArrowDownToLine className="h-4 w-4 shrink-0 text-emerald-400" />
           <span className="min-w-0 truncate text-zinc-200">
-            새 버전 v{status.version} 이(가) 있습니다.
+            A new version v{status.version} is available.
           </span>
           <button
             type="button"
             onClick={onInstallClick}
             className="shrink-0 rounded bg-emerald-600 px-2.5 py-1 text-xs font-medium text-white transition-colors hover:bg-emerald-500"
-            aria-label="지금 업데이트"
+            aria-label="Update now"
             tabIndex={0}
           >
-            업데이트
+            Update
           </button>
           <button
             type="button"
             onClick={onDismissClick}
             className="ml-auto shrink-0 rounded p-1 text-zinc-400 transition-colors hover:bg-zinc-700 hover:text-zinc-200"
-            aria-label="업데이트 알림 닫기"
+            aria-label="Dismiss update notification"
             tabIndex={0}
           >
             <X className="h-3.5 w-3.5" />
@@ -121,7 +121,7 @@ export function UpdateBanner() {
       {status.phase === 'downloading' && (
         <>
           <RefreshCw className="h-4 w-4 shrink-0 animate-spin text-emerald-400" />
-          <span className="shrink-0 text-zinc-200">업데이트 다운로드 중…</span>
+          <span className="shrink-0 text-zinc-200">Downloading update…</span>
           <div className="h-1.5 min-w-0 flex-1 overflow-hidden rounded-full bg-zinc-700">
             <div
               className="h-full rounded-full bg-emerald-500 transition-[width]"
@@ -139,20 +139,20 @@ export function UpdateBanner() {
       {status.phase === 'installed' && (
         <>
           <RefreshCw className="h-4 w-4 shrink-0 animate-spin text-emerald-400" />
-          <span className="text-zinc-200">설치 완료 — 앱을 다시 시작하는 중…</span>
+          <span className="text-zinc-200">Installed — restarting the app…</span>
         </>
       )}
 
       {status.phase === 'error' && (
         <>
           <span className="min-w-0 truncate text-red-400">
-            업데이트 실패: {status.message}
+            Update failed: {status.message}
           </span>
           <button
             type="button"
             onClick={onDismissClick}
             className="ml-auto shrink-0 rounded p-1 text-zinc-400 transition-colors hover:bg-zinc-700 hover:text-zinc-200"
-            aria-label="업데이트 오류 알림 닫기"
+            aria-label="Dismiss update error notification"
             tabIndex={0}
           >
             <X className="h-3.5 w-3.5" />

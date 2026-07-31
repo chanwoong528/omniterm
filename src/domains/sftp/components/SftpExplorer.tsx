@@ -184,7 +184,7 @@ export function SftpExplorer({ onCollapse }: SftpExplorerProps) {
         .filter((name) => existingNames.has(name));
       if (wouldOverwrite.length > 0) {
         const confirmed = await ask(
-          `다음 파일이 이미 존재합니다. 덮어쓸까요?\n${wouldOverwrite.join('\n')}`,
+          `The following files already exist. Overwrite?\n${wouldOverwrite.join('\n')}`,
           { title: 'Overwrite files?', kind: 'warning' }
         );
         if (!confirmed) return;
@@ -333,7 +333,7 @@ export function SftpExplorer({ onCollapse }: SftpExplorerProps) {
     async (entry: SftpEntry) => {
       if (!activeTerminalSessionId) return;
       const confirmed = await ask(
-        `정말 삭제할까요?\n${entry.path}${entry.isDir ? '\n(빈 디렉토리만 삭제됩니다)' : ''}`,
+        `Delete this item?\n${entry.path}${entry.isDir ? '\n(Only empty directories can be deleted)' : ''}`,
         { title: 'Delete', kind: 'warning' }
       );
       if (!confirmed) return;
@@ -609,7 +609,7 @@ export function SftpExplorer({ onCollapse }: SftpExplorerProps) {
             onClick={() => setPendingNameAction(null)}
             className="shrink-0 rounded px-2 py-1 text-xs text-zinc-400 hover:bg-zinc-700"
           >
-            취소
+            Cancel
           </button>
         </div>
       )}
@@ -619,12 +619,13 @@ export function SftpExplorer({ onCollapse }: SftpExplorerProps) {
           <p>{loadError}</p>
           {loadError.toLowerCase().includes('permission denied') && (
             <p className="mt-1.5 text-xs text-red-200/90">
-              <strong>원격이 macOS인 경우:</strong> macOS 개인정보 보호(TCC)가 <code className="text-red-100">sftp-server</code>의
-              Desktop/Downloads/Documents 접근을 차단하는 경우가 많습니다. System Settings → General → Sharing →
-              Remote Login (i) → <strong>“Allow full disk access for remote users”</strong>를 켠 뒤 Remote Login을 재시작하세요.
+              <strong>If the remote is macOS:</strong> macOS privacy protection (TCC) often blocks{' '}
+              <code className="text-red-100">sftp-server</code> from accessing Desktop/Downloads/Documents.
+              Go to System Settings → General → Sharing → Remote Login (i) → enable{' '}
+              <strong>“Allow full disk access for remote users”</strong>, then restart Remote Login.
               <br />
-              <strong>Linux 등:</strong> <kbd className="rounded bg-zinc-700 px-1">~</kbd> 또는{' '}
-              <kbd className="rounded bg-zinc-700 px-1">/home/사용자명</kbd>을 시도하세요.
+              <strong>Linux and others:</strong> try <kbd className="rounded bg-zinc-700 px-1">~</kbd> or{' '}
+              <kbd className="rounded bg-zinc-700 px-1">/home/username</kbd>.
             </p>
           )}
         </div>

@@ -10,6 +10,8 @@ interface KeyManagerState {
   setRegisteredKeys: (keys: RegisteredKeyMeta[]) => void;
   addKey: (key: RegisteredKeyMeta) => void;
   removeKey: (id: string) => void;
+  /** 키 파일 경로(storageKey)만 교체한다. 없는 파일을 새 경로로 재지정할 때 사용. */
+  updateKeyPath: (id: string, newPath: string) => void;
 }
 
 export const useKeyManagerStore = create<KeyManagerState>()(
@@ -24,6 +26,12 @@ export const useKeyManagerStore = create<KeyManagerState>()(
       removeKey: (id) =>
         set((state) => ({
           registeredKeys: state.registeredKeys.filter((k) => k.id !== id),
+        })),
+      updateKeyPath: (id, newPath) =>
+        set((state) => ({
+          registeredKeys: state.registeredKeys.map((k) =>
+            k.id === id ? { ...k, storageKey: newPath } : k
+          ),
         })),
     }),
     {

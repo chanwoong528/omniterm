@@ -3,6 +3,7 @@ import { TitleBar } from './components/layout/TitleBar';
 import { UpdateBanner } from './components/update/UpdateBanner';
 import { Sidebar } from './components/layout/Sidebar';
 import { MainArea } from './components/layout/MainArea';
+import { MissingKeyModal } from './domains/session/components/MissingKeyModal';
 import {
   ResizeHandle,
   SIDEBAR_DEFAULT_PX,
@@ -75,6 +76,7 @@ function App() {
         />
         <MainArea />
       </div>
+      <MissingKeyModal />
     </div>
   );
 }

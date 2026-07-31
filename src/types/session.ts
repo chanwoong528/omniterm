@@ -25,6 +25,8 @@ export interface TargetServerConfig {
 export interface SavedSession {
   id: string;
   label: string;
+  /** 세션 목록 그룹핑용 폴더명 (예: MobaXterm SubRep). 없으면 루트에 표시. */
+  folder?: string;
   target: TargetServerConfig;
   useBastion: boolean;
   bastion?: BastionConfig;

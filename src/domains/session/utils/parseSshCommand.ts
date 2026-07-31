@@ -155,14 +155,14 @@ function parseSshTokens(tokens: string[]): SshSpec {
 
 export function parseSshCommand(input: string): ParseSshResult {
   const tokens = tokenize(input.trim());
-  if (tokens.length === 0) return { ok: false, reason: '명령어를 입력해 주세요.' };
+  if (tokens.length === 0) return { ok: false, reason: 'Enter an ssh command.' };
   if (tokens[0] !== 'ssh') {
-    return { ok: false, reason: '`ssh`로 시작하는 명령어만 지원합니다.' };
+    return { ok: false, reason: 'Only commands starting with `ssh` are supported.' };
   }
 
   const spec = parseSshTokens(tokens.slice(1));
   if (!spec.destination) {
-    return { ok: false, reason: '접속 대상(user@host)을 찾지 못했습니다.' };
+    return { ok: false, reason: 'Could not find a destination (user@host).' };
   }
 
   const target: ParsedSshEndpoint = {
@@ -177,11 +177,11 @@ export function parseSshCommand(input: string): ParseSshResult {
   if (spec.proxyCommand) {
     const proxyTokens = tokenize(spec.proxyCommand);
     if (proxyTokens[0] !== 'ssh') {
-      return { ok: false, reason: 'ProxyCommand는 ssh 명령만 지원합니다.' };
+      return { ok: false, reason: 'Only ssh commands are supported in ProxyCommand.' };
     }
     const proxySpec = parseSshTokens(proxyTokens.slice(1));
     if (!proxySpec.destination) {
-      return { ok: false, reason: 'ProxyCommand에서 바스천(user@host)을 찾지 못했습니다.' };
+      return { ok: false, reason: 'Could not find a bastion (user@host) in ProxyCommand.' };
     }
     bastion = {
       host: proxySpec.destination.host,
@@ -192,7 +192,7 @@ export function parseSshCommand(input: string): ParseSshResult {
   } else if (spec.proxyJump) {
     const jump = parseJumpSpec(spec.proxyJump);
     if (!jump) {
-      return { ok: false, reason: 'ProxyJump(-J) 값을 해석하지 못했습니다.' };
+      return { ok: false, reason: 'Could not parse the ProxyJump (-J) value.' };
     }
     // -J hops authenticate with the same identity in the common case.
     bastion = { ...jump, keyPath: jump.keyPath ?? spec.keyPath };

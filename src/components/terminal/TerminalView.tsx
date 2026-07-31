@@ -196,7 +196,7 @@ export function TerminalView({ sessionId, isActive }: TerminalViewProps) {
           className="absolute inset-x-0 top-0 z-10 flex items-center justify-between gap-2 bg-red-900/80 px-3 py-1.5 text-xs text-red-100"
           role="alert"
         >
-          <span className="min-w-0 truncate">연결이 끊어졌습니다: {disconnectReason}</span>
+          <span className="min-w-0 truncate">Disconnected: {disconnectReason}</span>
         </div>
       )}
     </div>

@@ -1,5 +1,4 @@
 import { useMemo, useState } from 'react';
-import { invoke } from '@tauri-apps/api/core';
 import type { AuthMethod, BastionConfig, SavedSession, TargetServerConfig } from '../types';
 import { useKeyManagerStore } from '../../../stores/keyManagerStore';
 import { useSessionStore } from '../../../stores/sessionStore';
@@ -179,20 +178,6 @@ export function SessionForm({
     onTestConnection({ target, useBastion, bastion });
   };
 
-  const fillLocalhostTest = async () => {
-    setTargetHost('127.0.0.1');
-    setTargetPort(22);
-    setTargetAuthMethod('password');
-    setUseBastion(false);
-    setReuseBastionAuth(false);
-    try {
-      const username = await invoke<string>('get_os_username');
-      if (username) setTargetUsername(username);
-    } catch {
-      // ignore; user can type username manually
-    }
-  };
-
   const [importText, setImportText] = useState('');
   const [importError, setImportError] = useState<string | null>(null);
 
@@ -275,7 +260,7 @@ export function SessionForm({
           className="flex items-center gap-1.5 text-xs font-medium text-zinc-400"
         >
           <ClipboardPaste className="h-3.5 w-3.5" aria-hidden />
-          SSH 명령어로 채우기
+          Fill from SSH command
         </label>
         <textarea
           id="ssh-command-import"
@@ -305,7 +290,7 @@ export function SessionForm({
             </p>
           ) : (
             <p className="min-w-0 flex-1 truncate text-xs text-zinc-500">
-              키 파일은 Key Manager에 자동 등록됩니다. (⌘/Ctrl+Enter)
+              Key files are automatically registered in Key Manager. (⌘/Ctrl+Enter)
             </p>
           )}
           <button
@@ -314,22 +299,10 @@ export function SessionForm({
             disabled={!importText.trim()}
             className="shrink-0 rounded bg-zinc-600 px-2.5 py-1 text-xs font-medium text-white hover:bg-zinc-500 disabled:cursor-not-allowed disabled:opacity-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400"
           >
-            가져오기
+            Import
           </button>
         </div>
       </div>
-
-      <p className="text-xs text-zinc-500">
-        테스트:{' '}
-        <button
-          type="button"
-          onClick={fillLocalhostTest}
-          className="underline hover:text-zinc-300 focus:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400 rounded"
-          aria-label="Fill localhost test values"
-        >
-          이 컴퓨터(127.0.0.1)로 채우기
-        </button>
-      </p>
 
       <fieldset className="flex min-w-0 flex-col gap-2">
         <legend className="text-xs font-medium uppercase tracking-wide text-zinc-500">Session</legend>
@@ -345,7 +318,7 @@ export function SessionForm({
           aria-label="Saved session label"
         />
         <p className="text-xs text-zinc-500">
-          연결 시 세션이 자동 저장됩니다. (비밀번호는 저장되지 않음)
+          Sessions are saved automatically on connect. (Passwords are not saved)
         </p>
       </fieldset>
       {/* Target Server */}

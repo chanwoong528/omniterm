@@ -3,6 +3,8 @@ import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import type { BastionConfig, TargetServerConfig } from '../types';
 import { useKeyManagerStore } from '../../../stores/keyManagerStore';
+import { askAndFixKeyPermissions, isKeyPermissionError } from '../utils/keyPermissionFix';
+import { isKeyFileError, resolveMissingKeyFiles } from '../utils/missingKeyFix';
 
 function getConnectionErrorMessage(err: unknown): string {
   if (err instanceof Error) return err.message;
@@ -109,16 +111,10 @@ export function useEstablishConnection() {
       setIsConnecting(true);
       setConnectionError(null);
       setConnectionLog([]);
-      try {
-        const targetPayload = buildServerPayload(target, resolveKeyPath);
-        const payload: EstablishConnectionPayload = {
-          target: targetPayload,
-          useBastion,
-          bastion: useBastion && bastion
-            ? buildServerPayload(bastion, resolveKeyPath)
-            : undefined,
-        };
-        const sessionId = await invoke<string>('establish_ssh_connection', { payload });
+      let payload: EstablishConnectionPayload | null = null;
+
+      const runEstablish = async (p: EstablishConnectionPayload): Promise<string | null> => {
+        const sessionId = await invoke<string>('establish_ssh_connection', { payload: p });
         if (abortedRequestIdRef.current === requestId) {
           // The backend kept connecting after the user aborted; close the
           // now-orphaned session instead of leaking it with no UI handle.
@@ -126,8 +122,62 @@ export function useEstablishConnection() {
           return null;
         }
         return sessionId;
+      };
+
+      const retryEstablish = async (
+        p: EstablishConnectionPayload,
+        retryLogLine: string
+      ): Promise<string | null> => {
+        setConnectionLog((prev) => [...prev, retryLogLine]);
+        try {
+          return await runEstablish(p);
+        } catch (retryErr) {
+          const retryErrorMsg = getConnectionErrorMessage(retryErr);
+          setConnectionError(retryErrorMsg);
+          setConnectionLog((prev) => [...prev, `ERROR: ${retryErrorMsg}`]);
+          return null;
+        }
+      };
+
+      try {
+        const targetPayload = buildServerPayload(target, resolveKeyPath);
+        payload = {
+          target: targetPayload,
+          useBastion,
+          bastion: useBastion && bastion
+            ? buildServerPayload(bastion, resolveKeyPath)
+            : undefined,
+        };
+        return await runEstablish(payload);
       } catch (err) {
         const errorMsg = getConnectionErrorMessage(err);
+
+        // 키 파일이 존재하지 않으면(예: MobaXterm에서 가져온 Windows 경로)
+        // 모달로 새 경로를 지정받고 한 번만 재시도한다.
+        if (payload && isKeyFileError(errorMsg)) {
+          const resolved = await resolveMissingKeyFiles(
+            [payload.target, payload.bastion].filter(Boolean) as EstablishConnectionPayload['target'][]
+          );
+          if (resolved) {
+            return retryEstablish(payload, 'Key path updated. Retrying connection...');
+          }
+        }
+
+        // 키 퍼미션 문제라면 사용자에게 chmod 600 적용 여부를 물어보고,
+        // 동의 시 고친 뒤 한 번만 재시도한다.
+        if (payload && isKeyPermissionError(errorMsg)) {
+          const shouldRetry = await askAndFixKeyPermissions(errorMsg, [
+            payload.target.privateKeyPath,
+            payload.bastion?.privateKeyPath,
+          ]);
+          if (shouldRetry) {
+            return retryEstablish(
+              payload,
+              'Key permissions fixed (chmod 600). Retrying connection...'
+            );
+          }
+        }
+
         setConnectionError(errorMsg);
         setConnectionLog((prev) => [...prev, `ERROR: ${errorMsg}`]);
         return null;
@@ -160,17 +210,50 @@ export function useEstablishConnection() {
             ? buildServerPayload(bastion, resolveKeyPath)
             : undefined,
         };
-        const result = await invoke<{ ok: boolean; stdout: string; stderr: string }>(
-          'test_ssh_connection',
-          { payload }
-        );
-        const logLines = [
-          '── Test connection (system ssh) ──',
-          result.stdout.trim() || '(no stdout)',
-          result.stderr.trim() || '(no stderr)',
-          result.ok ? 'OK: Connection test passed.' : 'FAILED: Connection test failed.',
-        ];
-        setConnectionLog((prev) => [...prev, ...logLines]);
+        const runTest = async () => {
+          const result = await invoke<{ ok: boolean; stdout: string; stderr: string }>(
+            'test_ssh_connection',
+            { payload }
+          );
+          setConnectionLog((prev) => [
+            ...prev,
+            '── Test connection (system ssh) ──',
+            result.stdout.trim() || '(no stdout)',
+            result.stderr.trim() || '(no stderr)',
+            result.ok ? 'OK: Connection test passed.' : 'FAILED: Connection test failed.',
+          ]);
+          return result;
+        };
+
+        let result = await runTest();
+
+        // 키 파일이 존재하지 않으면 모달로 새 경로를 지정받고 한 번만 재시도한다.
+        if (!result.ok && isKeyFileError(result.stderr)) {
+          const resolved = await resolveMissingKeyFiles(
+            [payload.target, payload.bastion].filter(Boolean) as EstablishConnectionPayload['target'][]
+          );
+          if (resolved) {
+            setConnectionLog((prev) => [...prev, 'Key path updated. Retrying test...']);
+            result = await runTest();
+          }
+        }
+
+        // 키 퍼미션 문제라면 사용자에게 chmod 600 적용 여부를 물어보고,
+        // 동의 시 고친 뒤 한 번만 재시도한다.
+        if (!result.ok && isKeyPermissionError(result.stderr)) {
+          const shouldRetry = await askAndFixKeyPermissions(result.stderr, [
+            payload.target.privateKeyPath,
+            payload.bastion?.privateKeyPath,
+          ]);
+          if (shouldRetry) {
+            setConnectionLog((prev) => [
+              ...prev,
+              'Key permissions fixed (chmod 600). Retrying test...',
+            ]);
+            result = await runTest();
+          }
+        }
+
         if (!result.ok) {
           setConnectionError(result.stderr.trim() || result.stdout.trim() || 'Test failed.');
         }
