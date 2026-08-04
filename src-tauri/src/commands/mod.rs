@@ -1,3 +1,4 @@
+pub mod port_forward;
 pub mod ssh_connection;
 pub mod system;
 pub mod terminal;

@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import type { SavedSession } from '../types/session';
+import type { PortForwardRule } from '../types/port-forward';
 
 interface SessionState {
   savedSessions: SavedSession[];
@@ -10,6 +11,8 @@ interface SessionState {
   setActiveSessionId: (id: string | null) => void;
   getSessionById: (id: string) => SavedSession | undefined;
   markConnected: (id: string) => void;
+  upsertPortForwardRule: (sessionId: string, rule: PortForwardRule) => void;
+  removePortForwardRule: (sessionId: string, ruleId: string) => void;
 }
 
 const STORAGE_KEY = 'omniterm:sessions:v1';
@@ -44,6 +47,28 @@ export const useSessionStore = create<SessionState>()(
           if (!session) return state;
           const updated: SavedSession = { ...session, lastConnectedAt: new Date().toISOString() };
           return { savedSessions: upsert(state.savedSessions, updated) };
+        }),
+      upsertPortForwardRule: (sessionId, rule) =>
+        set((state) => {
+          const session = state.savedSessions.find((s) => s.id === sessionId);
+          if (!session) return state;
+          const rules = session.portForwards ?? [];
+          const isExisting = rules.some((r) => r.id === rule.id);
+          const nextRules = isExisting
+            ? rules.map((r) => (r.id === rule.id ? rule : r))
+            : [...rules, rule];
+          return {
+            savedSessions: upsert(state.savedSessions, { ...session, portForwards: nextRules }),
+          };
+        }),
+      removePortForwardRule: (sessionId, ruleId) =>
+        set((state) => {
+          const session = state.savedSessions.find((s) => s.id === sessionId);
+          if (!session?.portForwards) return state;
+          const nextRules = session.portForwards.filter((r) => r.id !== ruleId);
+          return {
+            savedSessions: upsert(state.savedSessions, { ...session, portForwards: nextRules }),
+          };
         }),
     }),
     {

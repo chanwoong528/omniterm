@@ -1,3 +1,5 @@
+import type { PortForwardRule } from './port-forward';
+
 /** SSH 인증 방식 */
 export type AuthMethod = 'password' | 'private_key';
 
@@ -32,5 +34,7 @@ export interface SavedSession {
   bastion?: BastionConfig;
   /** When true, reuse the bastion auth settings for the target (ProxyJump-like). */
   reuseBastionAuth?: boolean;
+  /** 로컬 포트 포워딩 규칙. 실행 상태는 portForwardStore(런타임)에 따로 있다. */
+  portForwards?: PortForwardRule[];
   lastConnectedAt?: string;
 }

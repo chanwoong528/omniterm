@@ -7,8 +7,17 @@ import { useSessionStore } from '../../stores/sessionStore';
 import type { SavedSession } from '../../types/session';
 import { SessionForm } from '../../domains/session/components/SessionForm';
 import { SessionList } from '../../domains/session/components/SessionList';
+import { SessionPasswordForm } from '../../domains/session/components/SessionPasswordForm';
+import {
+  needsPasswordPrompt,
+  resolveSessionConnection,
+  type SessionPasswords,
+} from '../../domains/session/utils/resolveSessionConnection';
 import { ImportMxtSessionsButton } from '../../domains/session/components/ImportMxtSessionsButton';
 import { KeyManagerPanel } from '../../domains/key-manager/components/KeyManagerPanel';
+import { PortForwardPanel } from '../../domains/port-forward/components/PortForwardPanel';
+import { usePortForward } from '../../domains/port-forward/hooks/usePortForward';
+import { generateId } from '../../utils/generateId';
 
 type SidebarTab = 'sessions' | 'keys';
 
@@ -22,11 +31,6 @@ interface SidebarProps {
 }
 
 const SUCCESS_TOAST_HIDE_MS = 2500;
-
-function generateSavedSessionId(): string {
-  if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) return crypto.randomUUID();
-  return `sess_${Date.now()}_${Math.random().toString(16).slice(2)}`;
-}
 
 export function Sidebar({ widthPx }: SidebarProps) {
   const [activeTab, setActiveTab] = useState<SidebarTab>('sessions');
@@ -71,38 +75,14 @@ export function Sidebar({ widthPx }: SidebarProps) {
 
   /** When set, show in-app password form for this saved session (window.prompt doesn't work in Tauri webview). */
   const [passwordPromptSession, setPasswordPromptSession] = useState<SavedSession | null>(null);
-  const [passwordPromptTargetPassword, setPasswordPromptTargetPassword] = useState('');
-  const [passwordPromptBastionPassword, setPasswordPromptBastionPassword] = useState('');
+  /** When set, the port forwarding panel is open for this saved session. */
+  const [portForwardSessionId, setPortForwardSessionId] = useState<string | null>(null);
+  const { startRule } = usePortForward();
 
-  const runConnectWithSession = async (
-    session: SavedSession,
-    targetPassword: string | undefined,
-    bastionPassword: string | undefined
-  ) => {
-    const shouldReuseBastionAuth =
-      Boolean(session.useBastion && session.reuseBastionAuth && session.bastion);
+  const runConnectWithSession = async (session: SavedSession, passwords: SessionPasswords) => {
+    const { target, useBastion, bastion } = resolveSessionConnection(session, passwords);
 
-    const bastion: BastionConfig | undefined =
-      session.useBastion && session.bastion
-        ? session.bastion.authMethod === 'password'
-          ? { ...session.bastion, password: bastionPassword ?? undefined }
-          : { ...session.bastion }
-        : undefined;
-
-    const target: TargetServerConfig = (() => {
-      if (shouldReuseBastionAuth && bastion) {
-        if (bastion.authMethod === 'password') {
-          return { ...session.target, authMethod: 'password', password: bastion.password };
-        }
-        return { ...session.target, authMethod: 'private_key', privateKeyId: bastion.privateKeyId };
-      }
-      if (session.target.authMethod === 'password') {
-        return { ...session.target, password: targetPassword ?? undefined };
-      }
-      return { ...session.target };
-    })();
-
-    const runtimeSessionId = await establishConnection(target, session.useBastion, bastion);
+    const runtimeSessionId = await establishConnection(target, useBastion, bastion);
     if (!runtimeSessionId) return false;
 
     // The shell (spawn_pty_process) is started by TerminalView after its
@@ -111,51 +91,32 @@ export function Sidebar({ widthPx }: SidebarProps) {
     addTab(runtimeSessionId, title);
     markConnected(session.id);
     showSuccessToast('Connected. Terminal tab opened.');
+
+    // Auto-start forwards here rather than in the panel: this is the one
+    // moment we hold the session's password, which is never persisted.
+    const autoStartRules = (session.portForwards ?? []).filter((rule) => rule.autoStart);
+    for (const rule of autoStartRules) {
+      void startRule(session, rule, passwords);
+    }
     return true;
   };
 
   const connectSavedSession = async (session: SavedSession) => {
     if (isConnecting) return;
-
-    const shouldReuseBastionAuth =
-      Boolean(session.useBastion && session.reuseBastionAuth && session.bastion);
-    const needsBastionPassword =
-      session.useBastion && session.bastion?.authMethod === 'password';
-    const needsTargetPassword =
-      !shouldReuseBastionAuth && session.target.authMethod === 'password';
-
-    if (needsTargetPassword || needsBastionPassword) {
+    if (needsPasswordPrompt(session)) {
       setPasswordPromptSession(session);
-      setPasswordPromptTargetPassword('');
-      setPasswordPromptBastionPassword('');
       return;
     }
-
-    await runConnectWithSession(session, undefined, undefined);
+    await runConnectWithSession(session, {});
   };
 
-  const onSubmitPasswordPrompt = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const onSubmitPasswordPrompt = async (passwords: SessionPasswords) => {
     const session = passwordPromptSession;
     if (!session || isConnecting) return;
-    const shouldReuseBastionAuth =
-      Boolean(session.useBastion && session.reuseBastionAuth && session.bastion);
-    const needsBastion = session.useBastion && session.bastion?.authMethod === 'password';
-    const needsTarget = !shouldReuseBastionAuth && session.target.authMethod === 'password';
-    if (needsTarget && !passwordPromptTargetPassword.trim()) return;
-    if (needsBastion && !passwordPromptBastionPassword.trim()) return;
-
-    const connected = await runConnectWithSession(
-      session,
-      needsTarget ? passwordPromptTargetPassword : undefined,
-      needsBastion ? passwordPromptBastionPassword : undefined
-    );
+    const connected = await runConnectWithSession(session, passwords);
     // Keep the form open on failure so a typo doesn't force re-selecting the
     // session and retyping everything; the error shows above via connectionError.
-    if (!connected) return;
-    setPasswordPromptSession(null);
-    setPasswordPromptTargetPassword('');
-    setPasswordPromptBastionPassword('');
+    if (connected) setPasswordPromptSession(null);
   };
 
   /** Finds a saved session with the same target/bastion endpoints, so
@@ -205,7 +166,7 @@ export function Sidebar({ widthPx }: SidebarProps) {
     // different server would otherwise overwrite that entry in place.
     const existing = findMatchingSavedSession(args.target, args.useBastion, args.bastion);
     const saved: SavedSession = {
-      id: existing?.id ?? generateSavedSessionId(),
+      id: existing?.id ?? generateId('sess'),
       label:
         args.saveSession?.label.trim() ||
         existing?.label ||
@@ -215,17 +176,28 @@ export function Sidebar({ widthPx }: SidebarProps) {
       useBastion: args.useBastion,
       bastion: sanitizeBastion,
       reuseBastionAuth: args.reuseBastionAuth ?? false,
+      portForwards: existing?.portForwards,
       lastConnectedAt: existing?.lastConnectedAt,
     };
     upsertSession(saved);
 
     const sessionId = await establishConnection(args.target, args.useBastion, args.bastion);
-    if (sessionId) {
-      const title = `${args.target.username}@${args.target.host}`;
-      addTab(sessionId, title);
-      showSuccessToast('Connected. Session saved automatically.');
-      markConnected(saved.id);
-      setActiveSessionId(saved.id);
+    if (!sessionId) return;
+
+    const title = `${args.target.username}@${args.target.host}`;
+    addTab(sessionId, title);
+    showSuccessToast('Connected. Session saved automatically.');
+    markConnected(saved.id);
+    setActiveSessionId(saved.id);
+
+    // Same rule as connecting from the list: auto-start forwards while we
+    // still hold the passwords, which are deliberately not saved.
+    const autoStartRules = (saved.portForwards ?? []).filter((rule) => rule.autoStart);
+    for (const rule of autoStartRules) {
+      void startRule(saved, rule, {
+        targetPassword: args.target.password,
+        bastionPassword: args.bastion?.password,
+      });
     }
   };
 
@@ -275,80 +247,23 @@ export function Sidebar({ widthPx }: SidebarProps) {
               <ImportMxtSessionsButton />
             </div>
             {passwordPromptSession && (
-              <form
-                onSubmit={onSubmitPasswordPrompt}
-                className="mb-3 rounded border border-zinc-600 bg-zinc-800/80 p-3"
-              >
-                {(() => {
-                  const shouldReuseBastionAuth = Boolean(
-                    passwordPromptSession.useBastion &&
-                      passwordPromptSession.reuseBastionAuth &&
-                      passwordPromptSession.bastion
-                  );
-                  const showTargetPassword =
-                    !shouldReuseBastionAuth && passwordPromptSession.target.authMethod === 'password';
-                  const showBastionPassword =
-                    passwordPromptSession.useBastion &&
-                    passwordPromptSession.bastion?.authMethod === 'password';
-                  return (
-                    <>
-                <p className="mb-2 text-xs text-zinc-300">
-                  Enter password: {passwordPromptSession.label}
-                </p>
-                {showTargetPassword && (
-                  <input
-                    type="password"
-                    placeholder="Target password"
-                    value={passwordPromptTargetPassword}
-                    onChange={(e) => setPasswordPromptTargetPassword(e.target.value)}
-                    autoCapitalize="none"
-                    autoCorrect="off"
-                    spellCheck={false}
-                    className="mb-2 w-full rounded border border-zinc-600 bg-zinc-800 px-2 py-1.5 text-sm text-zinc-100 placeholder-zinc-500 focus:border-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-500"
-                    autoComplete="current-password"
-                    aria-label="Target server password"
-                  />
-                )}
-                {showBastionPassword && (
-                    <input
-                      type="password"
-                      placeholder={shouldReuseBastionAuth ? 'Bastion/Target password' : 'Bastion password'}
-                      value={passwordPromptBastionPassword}
-                      onChange={(e) => setPasswordPromptBastionPassword(e.target.value)}
-                      autoCapitalize="none"
-                      autoCorrect="off"
-                      spellCheck={false}
-                      className="mb-2 w-full rounded border border-zinc-600 bg-zinc-800 px-2 py-1.5 text-sm text-zinc-100 placeholder-zinc-500 focus:border-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-500"
-                      autoComplete="current-password"
-                      aria-label="Bastion server password"
-                    />
-                )}
-                <div className="flex gap-2">
-                  <button
-                    type="submit"
-                    disabled={isConnecting}
-                    className="rounded bg-zinc-600 px-2 py-1.5 text-xs text-white hover:bg-zinc-500 disabled:opacity-50"
-                  >
-                    {isConnecting ? 'Connecting…' : 'Connect'}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setPasswordPromptSession(null);
-                      setPasswordPromptTargetPassword('');
-                      setPasswordPromptBastionPassword('');
-                    }}
-                    className="rounded px-2 py-1.5 text-xs text-zinc-400 hover:bg-zinc-700 hover:text-zinc-200"
-                  >
-                    Cancel
-                  </button>
-                </div>
-                    </>
-                  );
-                })()}
-              </form>
+              <div className="mb-3">
+                <SessionPasswordForm
+                  key={passwordPromptSession.id}
+                  session={passwordPromptSession}
+                  submitLabel="Connect"
+                  busyLabel="Connecting…"
+                  isBusy={isConnecting}
+                  onSubmit={(passwords) => void onSubmitPasswordPrompt(passwords)}
+                  onCancel={() => setPasswordPromptSession(null)}
+                />
+              </div>
             )}
-            <SessionList onConnectSavedSession={connectSavedSession} isConnecting={isConnecting} />
+            <SessionList
+              onConnectSavedSession={connectSavedSession}
+              onOpenPortForward={(session) => setPortForwardSessionId(session.id)}
+              isConnecting={isConnecting}
+            />
           </div>
           <SessionForm
             key={activeSavedSessionId ?? 'new'}
@@ -390,6 +305,13 @@ export function Sidebar({ widthPx }: SidebarProps) {
           <KeyManagerPanel />
         </div>
       </div>
+
+      {portForwardSessionId && (
+        <PortForwardPanel
+          sessionId={portForwardSessionId}
+          onClose={() => setPortForwardSessionId(null)}
+        />
+      )}
     </aside>
   );
 }

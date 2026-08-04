@@ -83,32 +83,58 @@ fn server_config_to_auth(payload: &ServerConfigPayload) -> Result<ssh::AuthPaylo
     Ok(auth)
 }
 
+/// Establishes ONE SSH session from a connection payload, direct or through
+/// the configured bastion. Returns the target session plus the bastion session
+/// that must be kept alive for the tunnel to stay open.
+///
+/// Every consumer needs its own session — libssh2 is not thread-safe, so the
+/// shell, SFTP and each port forward all connect separately through this.
+pub(crate) fn connect_session_from_payload(
+    payload: &EstablishSshConnectionPayload,
+    on_progress: &dyn Fn(&str),
+) -> Result<(ssh2::Session, Option<ssh2::Session>), ssh::SshConnectionError> {
+    let target_auth = server_config_to_auth(&payload.target)?;
+
+    if !payload.use_bastion {
+        let session = ssh::connect_direct(
+            &payload.target.host,
+            payload.target.port,
+            &payload.target.username,
+            &target_auth,
+            on_progress,
+        )?;
+        return Ok((session, None));
+    }
+
+    let bastion = payload.bastion.as_ref().ok_or_else(|| {
+        ssh::SshConnectionError::InvalidConfig(
+            "Bastion config required when use_bastion is true".into(),
+        )
+    })?;
+    let bastion_auth = server_config_to_auth(bastion)?;
+    let (target_session, bastion_session) = ssh::connect_via_bastion(
+        &bastion.host,
+        bastion.port,
+        &bastion.username,
+        &bastion_auth,
+        &payload.target.host,
+        payload.target.port,
+        &payload.target.username,
+        &target_auth,
+        on_progress,
+    )?;
+    Ok((target_session, Some(bastion_session)))
+}
+
 #[tauri::command]
 pub async fn establish_ssh_connection(
     payload: EstablishSshConnectionPayload,
     manager: State<'_, Arc<ssh::SshSessionManager>>,
     app: tauri::AppHandle,
 ) -> Result<String, ssh::SshConnectionError> {
-    let target_auth = server_config_to_auth(&payload.target)?;
-    let use_bastion = payload.use_bastion;
-    let target_host = payload.target.host.clone();
-    let target_port = payload.target.port;
-    let target_username = payload.target.username.clone();
-
-    let bastion_params = if use_bastion {
-        let b = payload.bastion.ok_or_else(|| {
-            ssh::SshConnectionError::InvalidConfig(
-                "Bastion config required when use_bastion is true".into(),
-            )
-        })?;
-        let bastion_auth = server_config_to_auth(&b)?;
-        Some((b.host, b.port, b.username, bastion_auth))
-    } else {
-        None
-    };
-
     let manager = Arc::clone(manager.inner());
     let app_blocking = app.clone();
+    let username = payload.target.username.clone();
 
     let result = tauri::async_runtime::spawn_blocking(move || {
         let on_progress = |msg: &str| {
@@ -116,61 +142,14 @@ pub async fn establish_ssh_connection(
         };
 
         on_progress("── Establishing shell connection ──");
-
-        let (target_session, bastion_session) = if let Some((b_host, b_port, b_user, b_auth)) = bastion_params.clone() {
-            let (target_sess, bastion_sess) = ssh::connect_via_bastion(
-                &b_host,
-                b_port,
-                &b_user,
-                &b_auth,
-                &target_host,
-                target_port,
-                &target_username,
-                &target_auth,
-                &on_progress,
-            )?;
-            (target_sess, Some(bastion_sess))
-        } else {
-            let sess = ssh::connect_direct(
-                &target_host,
-                target_port,
-                &target_username,
-                &target_auth,
-                &on_progress,
-            )?;
-            (sess, None)
-        };
+        let (target_session, bastion_session) = connect_session_from_payload(&payload, &on_progress)?;
         on_progress("Shell connection ready");
 
         on_progress("── Establishing SFTP connection ──");
 
         // SFTP is optional: a working shell session must not be thrown away
         // because the second (file-browser) connection failed.
-        let sftp_result: Result<(ssh2::Session, Option<ssh2::Session>), ssh::SshConnectionError> =
-            if let Some((b_host, b_port, b_user, b_auth)) = bastion_params {
-                ssh::connect_via_bastion(
-                    &b_host,
-                    b_port,
-                    &b_user,
-                    &b_auth,
-                    &target_host,
-                    target_port,
-                    &target_username,
-                    &target_auth,
-                    &on_progress,
-                )
-                .map(|(sess, bastion)| (sess, Some(bastion)))
-            } else {
-                ssh::connect_direct(
-                    &target_host,
-                    target_port,
-                    &target_username,
-                    &target_auth,
-                    &on_progress,
-                )
-                .map(|sess| (sess, None))
-            };
-        let (sftp_session, sftp_bastion) = match sftp_result {
+        let (sftp_session, sftp_bastion) = match connect_session_from_payload(&payload, &on_progress) {
             Ok((sess, bastion)) => {
                 on_progress("SFTP connection ready");
                 (Some(sess), bastion)
@@ -194,13 +173,7 @@ pub async fn establish_ssh_connection(
     .await
     .map_err(|e| ssh::SshConnectionError::TargetConnectionFailed(e.to_string()))??;
 
-    let id = manager.register(
-        result.0,
-        result.1,
-        result.2,
-        result.3,
-        payload.target.username.clone(),
-    );
+    let id = manager.register(result.0, result.1, result.2, result.3, username);
     let short_id = id.get(..8).unwrap_or(&id);
     let _ = app.emit("ssh-connection-progress", format!("Session registered: {}", short_id));
     Ok(id)

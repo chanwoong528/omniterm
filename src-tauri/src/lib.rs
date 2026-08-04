@@ -8,6 +8,9 @@ use std::sync::Arc;
 pub fn run() {
     let ssh_manager = Arc::new(ssh::SshSessionManager::new());
     let shell_manager = Arc::new(terminal::ShellWriteManager::new());
+    // Port forwards own their SSH sessions, so they outlive terminal tabs:
+    // closing a tab must not kill a tunnel a local client is using.
+    let port_forward_manager = Arc::new(ssh::PortForwardManager::new());
 
     // Sessions are kept alive with SSH keepalives (sent from each shell
     // thread) instead of being reaped on idle: an idle-reaper kills sessions
@@ -16,6 +19,7 @@ pub fn run() {
     tauri::Builder::default()
         .manage(ssh_manager)
         .manage(shell_manager)
+        .manage(port_forward_manager)
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
@@ -37,6 +41,10 @@ pub fn run() {
             commands::sftp_ops::sftp_mkdir,
             commands::sftp_ops::sftp_rename,
             commands::sftp_ops::sftp_remove,
+            commands::port_forward::start_port_forward,
+            commands::port_forward::stop_port_forward,
+            commands::port_forward::stop_port_forwards_for_session,
+            commands::port_forward::list_port_forwards,
         ])
         .setup(|app| {
             if cfg!(debug_assertions) {

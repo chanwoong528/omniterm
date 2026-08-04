@@ -6,20 +6,18 @@
 //! and stream→channel so only one thread touches the channel.
 
 use crate::ssh::auth::AuthPayload;
+use crate::ssh::bridge::bridge_channel_and_stream;
 use crate::ssh::direct;
 use crate::ssh::error::SshConnectionError;
-use ssh2::{Channel, Session};
-use std::io::{ErrorKind, Read, Write};
+use ssh2::Session;
+use std::io::ErrorKind;
 use std::net::{TcpListener, TcpStream};
 use std::sync::mpsc;
 use std::thread;
 use std::time::Duration;
 
 const CONNECT_TIMEOUT_MS: u32 = 15_000;
-const COPY_BUF_SIZE: usize = 32 * 1024;
 const BRIDGE_STREAM_READ_TIMEOUT_MS: u64 = 10;
-const BRIDGE_IDLE_SLEEP_MS: u64 = 2;
-const BRIDGE_WRITE_RETRY_MS: u64 = 2;
 const BRIDGE_READY_TIMEOUT_MS: u64 = 5_000;
 
 /// Bastion을 거쳐 Target SSH 세션을 수립합니다.
@@ -158,63 +156,4 @@ fn create_connected_pair() -> std::io::Result<(TcpStream, TcpStream)> {
         ErrorKind::ConnectionRefused,
         "Loopback bridge pairing failed: unexpected peer kept connecting",
     ))
-}
-
-/// Single-thread bridge: only this thread touches the channel (libssh2 is not thread-safe).
-/// Each iteration: try channel→stream, then try stream→channel. Non-blocking channel +
-/// short timeout on stream so we don't deadlock.
-fn bridge_channel_and_stream(mut channel: Channel, mut stream: TcpStream) {
-    let mut from_channel = [0u8; COPY_BUF_SIZE];
-    let mut from_stream = [0u8; COPY_BUF_SIZE];
-    loop {
-        match channel.read(&mut from_channel) {
-            Ok(0) => {
-                // On a non-blocking channel Ok(0) can mean "no data"; only a
-                // real EOF ends the tunnel.
-                if channel.eof() {
-                    break;
-                }
-            }
-            Ok(n) => {
-                if stream.write_all(&from_channel[..n]).is_err() {
-                    break;
-                }
-            }
-            Err(e) if e.kind() == ErrorKind::WouldBlock => {}
-            Err(_) => break,
-        }
-        match stream.read(&mut from_stream) {
-            Ok(0) => break,
-            Ok(n) => {
-                if channel_write_fully(&mut channel, &from_stream[..n]).is_err() {
-                    break;
-                }
-            }
-            // The read timeout shows up as WouldBlock or TimedOut depending on
-            // platform; any other error (ConnectionReset, BrokenPipe) means the
-            // local end is dead — exit instead of spinning forever.
-            Err(e) if e.kind() == ErrorKind::WouldBlock || e.kind() == ErrorKind::TimedOut => {}
-            Err(_) => break,
-        }
-        thread::sleep(Duration::from_millis(BRIDGE_IDLE_SLEEP_MS));
-    }
-    let _ = channel.close();
-}
-
-/// Writes the whole buffer to the non-blocking channel, retrying on
-/// WouldBlock. `write_all` aborts on WouldBlock after a partial write and the
-/// already-consumed bytes would be silently lost mid-tunnel.
-fn channel_write_fully(channel: &mut Channel, data: &[u8]) -> Result<(), ()> {
-    let mut written = 0;
-    while written < data.len() {
-        match channel.write(&data[written..]) {
-            Ok(0) => return Err(()),
-            Ok(n) => written += n,
-            Err(e) if e.kind() == ErrorKind::WouldBlock => {
-                thread::sleep(Duration::from_millis(BRIDGE_WRITE_RETRY_MS));
-            }
-            Err(_) => return Err(()),
-        }
-    }
-    Ok(())
 }

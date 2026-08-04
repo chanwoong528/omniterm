@@ -1,8 +1,19 @@
 import { useState } from 'react';
-import { Check, ChevronDown, ChevronRight, ClipboardCopy, Folder, Plug, Server, Trash2 } from 'lucide-react';
+import {
+  ArrowRightLeft,
+  Check,
+  ChevronDown,
+  ChevronRight,
+  ClipboardCopy,
+  Folder,
+  Plug,
+  Server,
+  Trash2,
+} from 'lucide-react';
 import { ask } from '@tauri-apps/plugin-dialog';
 import { useSessionStore } from '../../../stores/sessionStore';
 import { useKeyManagerStore } from '../../../stores/keyManagerStore';
+import { PortForwardBadge } from '../../port-forward/components/PortForwardBadge';
 import { buildSshCommand } from '../utils/buildSshCommand';
 import type { SavedSession } from '../types';
 
@@ -13,6 +24,7 @@ function SessionListItem({
   isActive,
   onSelect,
   onConnect,
+  onOpenPortForward,
   onCopyCommand,
   onRemove,
   isDisabled,
@@ -21,6 +33,7 @@ function SessionListItem({
   isActive: boolean;
   onSelect: () => void;
   onConnect: () => void;
+  onOpenPortForward: () => void;
   onCopyCommand: () => Promise<void>;
   onRemove: () => void;
   isDisabled: boolean;
@@ -61,6 +74,7 @@ function SessionListItem({
             {new Date(session.lastConnectedAt).toLocaleDateString()}
           </span>
         )}
+        <PortForwardBadge rules={session.portForwards ?? []} />
       </button>
       <button
         type="button"
@@ -74,6 +88,15 @@ function SessionListItem({
         ) : (
           <ClipboardCopy className="h-3.5 w-3.5" aria-hidden />
         )}
+      </button>
+      <button
+        type="button"
+        onClick={onOpenPortForward}
+        className="shrink-0 rounded p-1 text-zinc-500 hover:bg-zinc-600 hover:text-emerald-300 focus:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400"
+        aria-label={`Port forwarding for ${session.label}`}
+        title="Port forwarding"
+      >
+        <ArrowRightLeft className="h-3.5 w-3.5" aria-hidden />
       </button>
       <button
         type="button"
@@ -100,9 +123,11 @@ function SessionListItem({
 
 export function SessionList({
   onConnectSavedSession,
+  onOpenPortForward,
   isConnecting = false,
 }: {
   onConnectSavedSession: (session: SavedSession) => void;
+  onOpenPortForward: (session: SavedSession) => void;
   isConnecting?: boolean;
 }) {
   const savedSessions = useSessionStore((s) => s.savedSessions);
@@ -173,6 +198,7 @@ export function SessionList({
         isDisabled={isConnecting}
         onSelect={() => setActiveSessionId(session.id)}
         onConnect={() => onConnectSavedSession(session)}
+        onOpenPortForward={() => onOpenPortForward(session)}
         onCopyCommand={() => copySshCommand(session)}
         onRemove={() => void onRemoveWithConfirm(session)}
       />

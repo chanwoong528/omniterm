@@ -4,6 +4,7 @@ import { UpdateBanner } from './components/update/UpdateBanner';
 import { Sidebar } from './components/layout/Sidebar';
 import { MainArea } from './components/layout/MainArea';
 import { MissingKeyModal } from './domains/session/components/MissingKeyModal';
+import { usePortForwardStatusSync } from './domains/port-forward/hooks/usePortForwardStatusSync';
 import {
   ResizeHandle,
   SIDEBAR_DEFAULT_PX,
@@ -31,6 +32,9 @@ function clampSidebarWidthPx(value: number): number {
 }
 
 function App() {
+  // 세션 목록의 포워딩 배지는 패널이 닫혀 있어도 살아 있어야 하므로 루트에서 구독한다.
+  usePortForwardStatusSync();
+
   const [sidebarWidthPx, setSidebarWidthPx] = useState(() => {
     const stored = getStoredSidebarWidthPx();
     return stored ?? SIDEBAR_DEFAULT_PX;

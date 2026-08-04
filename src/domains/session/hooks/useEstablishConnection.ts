@@ -3,8 +3,8 @@ import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import type { BastionConfig, TargetServerConfig } from '../types';
 import { useKeyManagerStore } from '../../../stores/keyManagerStore';
-import { askAndFixKeyPermissions, isKeyPermissionError } from '../utils/keyPermissionFix';
-import { isKeyFileError, resolveMissingKeyFiles } from '../utils/missingKeyFix';
+import { buildConnectionPayload, type ConnectionPayload } from '../utils/buildServerPayload';
+import { recoverFromKeyError } from '../utils/recoverFromKeyError';
 
 function getConnectionErrorMessage(err: unknown): string {
   if (err instanceof Error) return err.message;
@@ -20,56 +20,7 @@ function getConnectionErrorMessage(err: unknown): string {
   return 'Connection failed';
 }
 
-interface EstablishConnectionPayload {
-  target: {
-    host: string;
-    port: number;
-    username: string;
-    authMethod: string;
-    password?: string;
-    privateKeyId?: string;
-    privateKeyPath?: string;
-  };
-  useBastion: boolean;
-  bastion?: {
-    host: string;
-    port: number;
-    username: string;
-    authMethod: string;
-    password?: string;
-    privateKeyId?: string;
-    privateKeyPath?: string;
-  };
-}
-
-function buildServerPayload(
-  config: TargetServerConfig | BastionConfig,
-  resolveKeyPath: (id: string) => string | undefined
-): EstablishConnectionPayload['target'] {
-  const authMethod =
-    config.authMethod === 'private_key'
-      ? 'privateKey'
-      : 'password';
-  const payload: EstablishConnectionPayload['target'] = {
-    host: config.host,
-    port: config.port,
-    username: config.username,
-    authMethod,
-  };
-  if (config.authMethod === 'password') {
-    payload.password = config.password;
-  } else if (config.authMethod === 'private_key' && config.privateKeyId) {
-    const resolvedPath = resolveKeyPath(config.privateKeyId);
-    if (!resolvedPath) {
-      throw new Error(
-        'Selected key not found in Key Manager. Re-add the key or choose another.'
-      );
-    }
-    payload.privateKeyId = config.privateKeyId;
-    payload.privateKeyPath = resolvedPath;
-  }
-  return payload;
-}
+type EstablishConnectionPayload = ConnectionPayload;
 
 export function useEstablishConnection() {
   const [isConnecting, setIsConnecting] = useState(false);
@@ -140,42 +91,16 @@ export function useEstablishConnection() {
       };
 
       try {
-        const targetPayload = buildServerPayload(target, resolveKeyPath);
-        payload = {
-          target: targetPayload,
-          useBastion,
-          bastion: useBastion && bastion
-            ? buildServerPayload(bastion, resolveKeyPath)
-            : undefined,
-        };
+        payload = buildConnectionPayload(target, useBastion, bastion, resolveKeyPath);
         return await runEstablish(payload);
       } catch (err) {
         const errorMsg = getConnectionErrorMessage(err);
 
-        // 키 파일이 존재하지 않으면(예: MobaXterm에서 가져온 Windows 경로)
-        // 모달로 새 경로를 지정받고 한 번만 재시도한다.
-        if (payload && isKeyFileError(errorMsg)) {
-          const resolved = await resolveMissingKeyFiles(
-            [payload.target, payload.bastion].filter(Boolean) as EstablishConnectionPayload['target'][]
-          );
-          if (resolved) {
-            return retryEstablish(payload, 'Key path updated. Retrying connection...');
-          }
-        }
-
-        // 키 퍼미션 문제라면 사용자에게 chmod 600 적용 여부를 물어보고,
-        // 동의 시 고친 뒤 한 번만 재시도한다.
-        if (payload && isKeyPermissionError(errorMsg)) {
-          const shouldRetry = await askAndFixKeyPermissions(errorMsg, [
-            payload.target.privateKeyPath,
-            payload.bastion?.privateKeyPath,
-          ]);
-          if (shouldRetry) {
-            return retryEstablish(
-              payload,
-              'Key permissions fixed (chmod 600). Retrying connection...'
-            );
-          }
+        // 키 파일이 없거나(예: MobaXterm에서 가져온 Windows 경로) 퍼미션이
+        // 너무 열려 있으면 고칠 기회를 준 뒤 한 번만 재시도한다.
+        if (payload) {
+          const recovery = await recoverFromKeyError(payload, errorMsg);
+          if (recovery) return retryEstablish(payload, recovery.note);
         }
 
         setConnectionError(errorMsg);
@@ -202,14 +127,7 @@ export function useEstablishConnection() {
       setIsTesting(true);
       setConnectionError(null);
       try {
-        const targetPayload = buildServerPayload(target, resolveKeyPath);
-        const payload: EstablishConnectionPayload = {
-          target: targetPayload,
-          useBastion,
-          bastion: useBastion && bastion
-            ? buildServerPayload(bastion, resolveKeyPath)
-            : undefined,
-        };
+        const payload = buildConnectionPayload(target, useBastion, bastion, resolveKeyPath);
         const runTest = async () => {
           const result = await invoke<{ ok: boolean; stdout: string; stderr: string }>(
             'test_ssh_connection',
@@ -227,29 +145,11 @@ export function useEstablishConnection() {
 
         let result = await runTest();
 
-        // 키 파일이 존재하지 않으면 모달로 새 경로를 지정받고 한 번만 재시도한다.
-        if (!result.ok && isKeyFileError(result.stderr)) {
-          const resolved = await resolveMissingKeyFiles(
-            [payload.target, payload.bastion].filter(Boolean) as EstablishConnectionPayload['target'][]
-          );
-          if (resolved) {
-            setConnectionLog((prev) => [...prev, 'Key path updated. Retrying test...']);
-            result = await runTest();
-          }
-        }
-
-        // 키 퍼미션 문제라면 사용자에게 chmod 600 적용 여부를 물어보고,
-        // 동의 시 고친 뒤 한 번만 재시도한다.
-        if (!result.ok && isKeyPermissionError(result.stderr)) {
-          const shouldRetry = await askAndFixKeyPermissions(result.stderr, [
-            payload.target.privateKeyPath,
-            payload.bastion?.privateKeyPath,
-          ]);
-          if (shouldRetry) {
-            setConnectionLog((prev) => [
-              ...prev,
-              'Key permissions fixed (chmod 600). Retrying test...',
-            ]);
+        // 연결과 같은 복구 경로: 키 경로/퍼미션을 고칠 기회를 준 뒤 한 번만 재시도.
+        if (!result.ok) {
+          const recovery = await recoverFromKeyError(payload, result.stderr);
+          if (recovery) {
+            setConnectionLog((prev) => [...prev, recovery.note]);
             result = await runTest();
           }
         }
