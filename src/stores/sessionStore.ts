@@ -17,6 +17,15 @@ interface SessionState {
 
 const STORAGE_KEY = 'omniterm:sessions:v1';
 
+/** 포워딩 규칙에 `kind`가 도입된 버전. 그 이전 규칙은 전부 로컬 포워딩이었다. */
+const SESSION_SCHEMA_VERSION = 1;
+
+/** localStorage에 실제로 남는 부분 (partialize와 같은 모양). */
+interface PersistedSessionState {
+  savedSessions: SavedSession[];
+  activeSessionId: string | null;
+}
+
 function upsert(list: SavedSession[], session: SavedSession): SavedSession[] {
   const idx = list.findIndex((s) => s.id === session.id);
   if (idx === -1) return [session, ...list];
@@ -73,6 +82,25 @@ export const useSessionStore = create<SessionState>()(
     }),
     {
       name: STORAGE_KEY,
+      version: SESSION_SCHEMA_VERSION,
+      // 이전 버전에는 로컬 포워딩만 있었으므로 kind가 없는 규칙은 local로 본다.
+      // 안 채워 넣으면 백엔드가 kind를 필수로 받아 시작이 실패한다.
+      migrate: (persisted, version): PersistedSessionState => {
+        const state = (persisted ?? {}) as Partial<PersistedSessionState>;
+        const savedSessions = state.savedSessions ?? [];
+        const activeSessionId = state.activeSessionId ?? null;
+        if (version >= SESSION_SCHEMA_VERSION) return { savedSessions, activeSessionId };
+        return {
+          activeSessionId,
+          savedSessions: savedSessions.map((session) => ({
+            ...session,
+            portForwards: session.portForwards?.map((rule) => ({
+              ...rule,
+              kind: rule.kind ?? 'local',
+            })),
+          })),
+        };
+      },
       partialize: (state) => ({
         savedSessions: state.savedSessions,
         activeSessionId: state.activeSessionId,

@@ -1,19 +1,49 @@
 import { useEffect, useState } from 'react';
-import { ArrowRightLeft, Pencil, Play, Plus, Square, Trash2, X } from 'lucide-react';
+import {
+  ArrowRightLeft,
+  Check,
+  ChevronDown,
+  ChevronRight,
+  ClipboardCopy,
+  Pencil,
+  Play,
+  Square,
+  Trash2,
+  X,
+} from 'lucide-react';
 import { ask } from '@tauri-apps/plugin-dialog';
 import { useSessionStore } from '../../../stores/sessionStore';
 import { usePortForwardStore } from '../../../stores/portForwardStore';
 import { useMissingKeyModalStore } from '../../../stores/missingKeyModalStore';
 import { SessionPasswordForm } from '../../session/components/SessionPasswordForm';
-import { needsPasswordPrompt, type SessionPasswords } from '../../session/utils/resolveSessionConnection';
+import {
+  needsPasswordPrompt,
+  type SessionPasswords,
+} from '../../session/utils/resolveSessionConnection';
 import type { SavedSession } from '../../session/types';
 import { usePortForward } from '../hooks/usePortForward';
 import { usePortForwardLog } from '../hooks/usePortForwardLog';
-import { describePortForwardRule, type PortForwardRule, type PortForwardStatus } from '../types';
+import {
+  copyableEndpoint,
+  describePortForwardRule,
+  FORWARD_KIND_LABEL,
+  forwardRuleSummary,
+  type PortForwardRule,
+  type PortForwardStatus,
+} from '../types';
+import { suggestAlternativePort } from '../utils/parseForwardTarget';
+import { PortForwardQuickAdd } from './PortForwardQuickAdd';
 import { PortForwardRuleForm } from './PortForwardRuleForm';
 
+const COPY_FEEDBACK_MS = 1500;
+
+/** 로컬 포트가 이미 점유됐다는 백엔드 에러인지. */
+function isPortConflict(status: PortForwardStatus | undefined): boolean {
+  return status?.state === 'error' && /already in use/i.test(status.message ?? '');
+}
+
 /**
- * 한 세션의 포트 포워딩 규칙을 편집하고 실행하는 모달.
+ * 한 세션의 포트 포워딩을 편집하고 실행하는 모달.
  * 규칙은 SavedSession에 저장되고, 실행 상태는 백엔드가 이벤트로 알려준다.
  */
 export function PortForwardPanel({
@@ -83,6 +113,12 @@ function PanelContent({ session, onClose }: { session: SavedSession; onClose: ()
     void startRule(session, rule);
   };
 
+  /** 한 줄 입력으로 만든 규칙은 저장하고 바로 시작한다 — 그게 유일한 목적이다. */
+  const onQuickCreate = (rule: PortForwardRule) => {
+    upsertRule(session.id, rule);
+    onRequestStart(rule);
+  };
+
   const onSubmitPassword = async (passwords: SessionPasswords) => {
     const rule = awaitingPasswordRule;
     if (!rule) return;
@@ -92,13 +128,23 @@ function PanelContent({ session, onClose }: { session: SavedSession; onClose: ()
   };
 
   const onRemoveWithConfirm = async (rule: PortForwardRule) => {
-    const confirmed = await ask(`Delete this port forward rule?\n${describePortForwardRule(rule)}`, {
+    const confirmed = await ask(`Delete this port forward?\n${forwardRuleSummary(rule)}`, {
       title: 'Delete rule',
       kind: 'warning',
     });
     if (!confirmed) return;
     await stopRule(rule.id);
     removeRule(session.id, rule.id);
+  };
+
+  /** 로컬 포트가 점유됐을 때 다른 포트로 바꿔 바로 재시도한다. */
+  const onUseAlternativePort = (rule: PortForwardRule) => {
+    const moved: PortForwardRule = {
+      ...rule,
+      localPort: suggestAlternativePort(rule.localPort),
+    };
+    upsertRule(session.id, moved);
+    onRequestStart(moved);
   };
 
   const onSaveRule = (rule: PortForwardRule) => {
@@ -142,11 +188,7 @@ function PanelContent({ session, onClose }: { session: SavedSession; onClose: ()
       </div>
 
       <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto p-4">
-        {rules.length === 0 && editing === null && (
-          <p className="py-4 text-center text-sm text-zinc-500">
-            No rules yet. Add one to tunnel a remote port to this machine.
-          </p>
-        )}
+        <PortForwardQuickAdd existingRules={rules} onCreate={onQuickCreate} />
 
         {rules.length > 0 && (
           <ul className="flex flex-col gap-1.5" aria-label="Port forward rules">
@@ -160,6 +202,7 @@ function PanelContent({ session, onClose }: { session: SavedSession; onClose: ()
                   onStop={() => void stopRule(rule.id)}
                   onEdit={() => setEditing(rule)}
                   onRemove={() => void onRemoveWithConfirm(rule)}
+                  onUseAlternativePort={() => onUseAlternativePort(rule)}
                 />
               </li>
             ))}
@@ -178,29 +221,54 @@ function PanelContent({ session, onClose }: { session: SavedSession; onClose: ()
           />
         )}
 
-        {editing === null ? (
-          <button
-            type="button"
-            onClick={() => setEditing('new')}
-            className="flex items-center justify-center gap-1.5 rounded border border-dashed border-zinc-600 px-3 py-2 text-xs text-zinc-400 hover:border-zinc-500 hover:text-zinc-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400"
-            aria-label="Add port forward rule"
-            tabIndex={0}
-          >
-            <Plus className="h-3.5 w-3.5" aria-hidden />
-            Add rule
-          </button>
-        ) : (
-          <PortForwardRuleForm
-            key={editing === 'new' ? 'new' : editing.id}
-            rule={editing === 'new' ? null : editing}
-            onSave={onSaveRule}
-            onCancel={() => setEditing(null)}
-          />
-        )}
+        <AdvancedSection
+          isOpen={editing !== null}
+          onOpen={() => setEditing('new')}
+          onClose={() => setEditing(null)}
+        >
+          {editing !== null && (
+            <PortForwardRuleForm
+              key={editing === 'new' ? 'new' : editing.id}
+              rule={editing === 'new' ? null : editing}
+              onSave={onSaveRule}
+              onCancel={() => setEditing(null)}
+            />
+          )}
+        </AdvancedSection>
 
         {lines.length > 0 && <ActivityLog lines={lines} onClear={clearLines} />}
       </div>
     </>
+  );
+}
+
+/** 세부 설정이 필요할 때만 펼치는 영역. 기본 경로는 위의 한 줄 입력이다. */
+function AdvancedSection({
+  isOpen,
+  onOpen,
+  onClose,
+  children,
+}: {
+  isOpen: boolean;
+  onOpen: () => void;
+  onClose: () => void;
+  children: React.ReactNode;
+}) {
+  const ToggleIcon = isOpen ? ChevronDown : ChevronRight;
+  return (
+    <div className="flex flex-col gap-2">
+      <button
+        type="button"
+        onClick={isOpen ? onClose : onOpen}
+        aria-expanded={isOpen}
+        className="flex items-center gap-1 self-start text-[11px] text-zinc-500 hover:text-zinc-300 focus:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400"
+        tabIndex={0}
+      >
+        <ToggleIcon className="h-3 w-3" aria-hidden />
+        Advanced — custom ports, bind address, auto-start
+      </button>
+      {children}
+    </div>
   );
 }
 
@@ -212,6 +280,7 @@ function RuleRow({
   onStop,
   onEdit,
   onRemove,
+  onUseAlternativePort,
 }: {
   rule: PortForwardRule;
   status: PortForwardStatus | undefined;
@@ -220,8 +289,12 @@ function RuleRow({
   onStop: () => void;
   onEdit: () => void;
   onRemove: () => void;
+  onUseAlternativePort: () => void;
 }) {
+  const [isCopied, setIsCopied] = useState(false);
   const isRunning = status?.state === 'running';
+  const endpoint = copyableEndpoint(rule);
+
   const dotClassName = (() => {
     if (isRunning) return 'bg-emerald-400';
     if (status?.state === 'error') return 'bg-red-400';
@@ -232,64 +305,114 @@ function RuleRow({
     if (isPending) return isRunning ? 'Stopping…' : 'Starting…';
     if (isRunning) {
       const active = status?.activeConnections ?? 0;
-      return `Listening on ${rule.localHost}:${rule.localPort} · ${active} active`;
+      return `${forwardRuleSummary(rule)} · ${active} active`;
     }
     if (status?.state === 'error' && status.message) return status.message;
-    return `${rule.localHost}:${rule.localPort} → ${rule.remoteHost}:${rule.remotePort}`;
+    return forwardRuleSummary(rule);
   })();
 
+  const onCopyEndpoint = async () => {
+    if (!endpoint) return;
+    try {
+      await navigator.clipboard.writeText(endpoint);
+      setIsCopied(true);
+      window.setTimeout(() => setIsCopied(false), COPY_FEEDBACK_MS);
+    } catch {
+      // 클립보드 접근 실패 시 조용히 무시 — 버튼 피드백만 생략된다.
+    }
+  };
+
   return (
-    <div className="flex min-w-0 items-center gap-2 rounded border border-zinc-700 bg-zinc-900/60 px-3 py-2">
-      <span className={`h-2 w-2 shrink-0 rounded-full ${dotClassName}`} aria-hidden />
-      <div className="min-w-0 flex-1">
-        <p className="truncate text-sm text-zinc-200">{describePortForwardRule(rule)}</p>
-        <p
-          className={`truncate text-[11px] ${status?.state === 'error' && !isRunning ? 'text-red-400' : 'text-zinc-500'}`}
-          title={detail}
-        >
-          {detail}
-        </p>
-      </div>
-      <button
-        type="button"
-        onClick={isRunning ? onStop : onStart}
-        disabled={isPending}
-        className={`shrink-0 rounded p-1.5 disabled:opacity-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400 ${
-          isRunning
-            ? 'text-red-400 hover:bg-zinc-700 hover:text-red-300'
-            : 'text-emerald-400 hover:bg-zinc-700 hover:text-emerald-300'
-        }`}
-        aria-label={`${isRunning ? 'Stop' : 'Start'} ${describePortForwardRule(rule)}`}
-        title={isRunning ? 'Stop' : 'Start'}
-        tabIndex={0}
-      >
-        {isRunning ? (
-          <Square className="h-3.5 w-3.5" aria-hidden />
-        ) : (
-          <Play className="h-3.5 w-3.5" aria-hidden />
+    <div className="rounded border border-zinc-700 bg-zinc-900/60 px-3 py-2">
+      <div className="flex min-w-0 items-center gap-2">
+        <span className={`h-2 w-2 shrink-0 rounded-full ${dotClassName}`} aria-hidden />
+        <div className="min-w-0 flex-1">
+          <p className="flex min-w-0 items-center gap-1.5 text-sm text-zinc-200">
+            <span className="truncate">{describePortForwardRule(rule)}</span>
+            <span className="shrink-0 rounded bg-zinc-700/60 px-1 py-px text-[10px] uppercase tracking-wide text-zinc-400">
+              {FORWARD_KIND_LABEL[rule.kind]}
+            </span>
+          </p>
+          <p
+            className={`truncate text-[11px] ${
+              status?.state === 'error' && !isRunning ? 'text-red-400' : 'text-zinc-500'
+            }`}
+            title={detail}
+          >
+            {detail}
+          </p>
+        </div>
+
+        {isRunning && endpoint && (
+          <button
+            type="button"
+            onClick={() => void onCopyEndpoint()}
+            className="flex shrink-0 items-center gap-1 rounded bg-zinc-800 px-2 py-1 font-mono text-[11px] text-emerald-300 hover:bg-zinc-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400"
+            aria-label={`Copy ${endpoint}`}
+            title="Copy for your DB client / proxy settings"
+            tabIndex={0}
+          >
+            {isCopied ? (
+              <Check className="h-3 w-3 text-emerald-400" aria-hidden />
+            ) : (
+              <ClipboardCopy className="h-3 w-3" aria-hidden />
+            )}
+            {endpoint}
+          </button>
         )}
-      </button>
-      <button
-        type="button"
-        onClick={onEdit}
-        disabled={isRunning}
-        className="shrink-0 rounded p-1.5 text-zinc-500 hover:bg-zinc-700 hover:text-zinc-200 disabled:opacity-40 focus:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400"
-        aria-label={`Edit ${describePortForwardRule(rule)}`}
-        title={isRunning ? 'Stop the forward before editing' : 'Edit'}
-        tabIndex={0}
-      >
-        <Pencil className="h-3.5 w-3.5" aria-hidden />
-      </button>
-      <button
-        type="button"
-        onClick={onRemove}
-        className="shrink-0 rounded p-1.5 text-zinc-500 hover:bg-zinc-700 hover:text-red-300 focus:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400"
-        aria-label={`Delete ${describePortForwardRule(rule)}`}
-        title="Delete"
-        tabIndex={0}
-      >
-        <Trash2 className="h-3.5 w-3.5" aria-hidden />
-      </button>
+
+        <button
+          type="button"
+          onClick={isRunning ? onStop : onStart}
+          disabled={isPending}
+          className={`shrink-0 rounded p-1.5 disabled:opacity-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400 ${
+            isRunning
+              ? 'text-red-400 hover:bg-zinc-700 hover:text-red-300'
+              : 'text-emerald-400 hover:bg-zinc-700 hover:text-emerald-300'
+          }`}
+          aria-label={`${isRunning ? 'Stop' : 'Start'} ${describePortForwardRule(rule)}`}
+          title={isRunning ? 'Stop' : 'Start'}
+          tabIndex={0}
+        >
+          {isRunning ? (
+            <Square className="h-3.5 w-3.5" aria-hidden />
+          ) : (
+            <Play className="h-3.5 w-3.5" aria-hidden />
+          )}
+        </button>
+        <button
+          type="button"
+          onClick={onEdit}
+          disabled={isRunning}
+          className="shrink-0 rounded p-1.5 text-zinc-500 hover:bg-zinc-700 hover:text-zinc-200 disabled:opacity-40 focus:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400"
+          aria-label={`Edit ${describePortForwardRule(rule)}`}
+          title={isRunning ? 'Stop the forward before editing' : 'Edit'}
+          tabIndex={0}
+        >
+          <Pencil className="h-3.5 w-3.5" aria-hidden />
+        </button>
+        <button
+          type="button"
+          onClick={onRemove}
+          className="shrink-0 rounded p-1.5 text-zinc-500 hover:bg-zinc-700 hover:text-red-300 focus:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400"
+          aria-label={`Delete ${describePortForwardRule(rule)}`}
+          title="Delete"
+          tabIndex={0}
+        >
+          <Trash2 className="h-3.5 w-3.5" aria-hidden />
+        </button>
+      </div>
+
+      {isPortConflict(status) && !isPending && (
+        <button
+          type="button"
+          onClick={onUseAlternativePort}
+          className="mt-1.5 ml-4 rounded bg-zinc-700 px-2 py-1 text-[11px] text-zinc-200 hover:bg-zinc-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400"
+          tabIndex={0}
+        >
+          Use port {suggestAlternativePort(rule.localPort)} instead
+        </button>
+      )}
     </div>
   );
 }

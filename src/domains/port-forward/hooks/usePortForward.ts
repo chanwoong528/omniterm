@@ -26,11 +26,12 @@ function toErrorStatus(
   return {
     ruleId: rule.id,
     savedSessionId: session.id,
+    kind: rule.kind,
     state: 'error',
     localHost: rule.localHost,
     localPort: rule.localPort,
-    remoteHost: rule.remoteHost,
-    remotePort: rule.remotePort,
+    remoteHost: rule.remoteHost ?? '',
+    remotePort: rule.remotePort ?? 0,
     activeConnections: 0,
     totalConnections: 0,
     message,
@@ -64,6 +65,7 @@ export function usePortForward() {
           savedSessionId: session.id,
           rule: {
             id: rule.id,
+            kind: rule.kind,
             localHost: rule.localHost,
             localPort: rule.localPort,
             remoteHost: rule.remoteHost,

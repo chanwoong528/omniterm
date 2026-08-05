@@ -1,7 +1,6 @@
 use crate::commands::ssh_connection::{connect_session_from_payload, EstablishSshConnectionPayload};
 use crate::ssh;
 use serde::Deserialize;
-use std::net::{SocketAddr, TcpListener};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -17,10 +16,11 @@ const STOP_WAIT_POLL: Duration = Duration::from_millis(10);
 #[serde(rename_all = "camelCase")]
 pub struct PortForwardRulePayload {
     id: String,
+    kind: ssh::ForwardKind,
     local_host: Option<String>,
     local_port: u16,
-    remote_host: String,
-    remote_port: u16,
+    remote_host: Option<String>,
+    remote_port: Option<u16>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -36,56 +36,76 @@ pub struct StartPortForwardPayload {
 }
 
 fn build_spec(rule: PortForwardRulePayload) -> Result<ssh::ForwardRuleSpec, String> {
-    let remote_host = rule.remote_host.trim().to_string();
     if rule.id.trim().is_empty() {
         return Err("Rule id is required.".to_string());
-    }
-    if remote_host.is_empty() {
-        return Err("Remote host is required.".to_string());
-    }
-    if rule.local_port == 0 {
-        return Err("Local port must be between 1 and 65535.".to_string());
-    }
-    if rule.remote_port == 0 {
-        return Err("Remote port must be between 1 and 65535.".to_string());
     }
     let local_host = rule
         .local_host
         .as_deref()
         .map(str::trim)
-        .filter(|h| !h.is_empty())
+        .filter(|host| !host.is_empty())
         .unwrap_or("127.0.0.1")
         .to_string();
+    let remote_host = rule
+        .remote_host
+        .as_deref()
+        .map(str::trim)
+        .unwrap_or("")
+        .to_string();
+    let remote_port = rule.remote_port.unwrap_or(0);
+
+    match rule.kind {
+        ssh::ForwardKind::Local => {
+            if remote_host.is_empty() {
+                return Err("Destination host is required for a local forward.".to_string());
+            }
+            if remote_port == 0 {
+                return Err("Destination port must be between 1 and 65535.".to_string());
+            }
+            if rule.local_port == 0 {
+                return Err("Local port must be between 1 and 65535.".to_string());
+            }
+        }
+        ssh::ForwardKind::Remote => {
+            if rule.local_port == 0 {
+                return Err("Destination port on this machine must be between 1 and 65535.".to_string());
+            }
+            // remote_port 0 is legal: the server picks a free port and reports it.
+        }
+        ssh::ForwardKind::Dynamic => {
+            if rule.local_port == 0 {
+                return Err("SOCKS proxy port must be between 1 and 65535.".to_string());
+            }
+        }
+    }
 
     Ok(ssh::ForwardRuleSpec {
         id: rule.id,
+        kind: rule.kind,
         local_host,
         local_port: rule.local_port,
         remote_host,
-        remote_port: rule.remote_port,
+        remote_port,
     })
 }
 
-/// Binds before connecting: a port conflict is by far the most common failure
-/// and it costs nothing to detect, while an SSH handshake takes seconds.
-fn bind_local_listener(spec: &ssh::ForwardRuleSpec) -> Result<TcpListener, String> {
-    let ip = ssh::resolve_bind_ip(&spec.local_host)?;
-    let addr = SocketAddr::new(ip, spec.local_port);
-    let listener = TcpListener::bind(addr).map_err(|e| match e.kind() {
-        std::io::ErrorKind::AddrInUse => format!(
-            "Local port {} is already in use. Choose another port or stop the program using it.",
-            spec.local_port
+/// Human-readable summary for the activity log, so the user can see what the
+/// rule actually does without translating `-L`/`-R`/`-D` in their head.
+fn describe_spec(spec: &ssh::ForwardRuleSpec) -> String {
+    match spec.kind {
+        ssh::ForwardKind::Local => format!(
+            "Listening on {}:{} → {}:{}",
+            spec.local_host, spec.local_port, spec.remote_host, spec.remote_port
         ),
-        std::io::ErrorKind::PermissionDenied => format!(
-            "No permission to bind local port {}. Ports below 1024 require elevated privileges.",
-            spec.local_port
+        ssh::ForwardKind::Remote => format!(
+            "Server will listen on port {} → {}:{} on this machine",
+            spec.remote_port, spec.local_host, spec.local_port
         ),
-        _ => format!("Could not bind {}: {}", addr, e),
-    })?;
-    listener
-        .set_nonblocking(true)
-        .map_err(|e| format!("Could not configure local listener: {}", e))?;
-    Ok(listener)
+        ssh::ForwardKind::Dynamic => format!(
+            "SOCKS5 proxy on {}:{}",
+            spec.local_host, spec.local_port
+        ),
+    }
 }
 
 #[tauri::command]
@@ -105,20 +125,37 @@ pub async fn start_port_forward(
     let app_blocking = app.clone();
     let spec_for_blocking = spec.clone();
 
-    let (listener, session, bastion_session) = tauri::async_runtime::spawn_blocking(move || {
-        let spec = spec_for_blocking;
+    let (source, session, bastion_session, spec) = tauri::async_runtime::spawn_blocking(move || {
+        let mut spec = spec_for_blocking;
         let on_progress = |msg: &str| ssh::emit_progress(&app_blocking, &spec.id, msg);
 
-        let listener = bind_local_listener(&spec)?;
-        on_progress(&format!(
-            "Listening on {}:{} → {}:{}",
-            spec.local_host, spec.local_port, spec.remote_host, spec.remote_port
-        ));
+        // A local/dynamic forward owns a local listener, so bind first and fail
+        // fast on a port conflict. A remote forward has nothing to bind until
+        // the session exists — only the server can listen for it.
+        let local_listener = match spec.kind {
+            ssh::ForwardKind::Remote => None,
+            _ => Some(ssh::bind_local_listener(&spec)?),
+        };
+        if local_listener.is_some() {
+            on_progress(&describe_spec(&spec));
+        }
 
         let (session, bastion_session) = connect_session_from_payload(&connection, &on_progress)
             .map_err(|e| e.to_string())?;
+
+        let source = match local_listener {
+            Some(listener) => ssh::ForwardSource::LocalSocket(listener),
+            None => {
+                let (listener, bound_port) = ssh::listen_on_server(&session, &spec)?;
+                // The server may have picked the port (requested 0), so record
+                // what it actually bound before the UI shows it.
+                spec.remote_port = bound_port;
+                on_progress(&describe_spec(&spec));
+                ssh::ForwardSource::RemoteChannel(listener)
+            }
+        };
         on_progress("Tunnel session ready");
-        Ok::<_, String>((listener, session, bastion_session))
+        Ok::<_, String>((source, session, bastion_session, spec))
     })
     .await
     .map_err(|e| e.to_string())??;
@@ -137,7 +174,7 @@ pub async fn start_port_forward(
     ssh::spawn_forward_thread(ssh::ForwardRuntime {
         session,
         bastion_session,
-        listener,
+        source,
         spec,
         saved_session_id,
         stop,
