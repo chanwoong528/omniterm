@@ -5,6 +5,8 @@ import { Sidebar } from './components/layout/Sidebar';
 import { MainArea } from './components/layout/MainArea';
 import { MissingKeyModal } from './domains/session/components/MissingKeyModal';
 import { usePortForwardStatusSync } from './domains/port-forward/hooks/usePortForwardStatusSync';
+import { useAppearanceStore } from './stores/appearanceStore';
+import { applyAppearanceMode } from './domains/appearance/utils/applyAppearanceMode';
 import {
   ResizeHandle,
   SIDEBAR_DEFAULT_PX,
@@ -34,6 +36,13 @@ function clampSidebarWidthPx(value: number): number {
 function App() {
   // 세션 목록의 포워딩 배지는 패널이 닫혀 있어도 살아 있어야 하므로 루트에서 구독한다.
   usePortForwardStatusSync();
+
+  // main.tsx applies the persisted mode before the first paint; this keeps
+  // <html data-theme> in sync with every later toggle.
+  const appearanceMode = useAppearanceStore((s) => s.mode);
+  useEffect(() => {
+    applyAppearanceMode(appearanceMode);
+  }, [appearanceMode]);
 
   const [sidebarWidthPx, setSidebarWidthPx] = useState(() => {
     const stored = getStoredSidebarWidthPx();

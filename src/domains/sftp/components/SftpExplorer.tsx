@@ -600,7 +600,7 @@ export function SftpExplorer({ onCollapse }: SftpExplorerProps) {
           <button
             type="button"
             onClick={() => void submitNameAction()}
-            className="shrink-0 rounded bg-zinc-600 px-2 py-1 text-xs text-white hover:bg-zinc-500"
+            className="shrink-0 rounded bg-accent px-2 py-1 text-xs text-accent-fg hover:bg-accent-hover"
           >
             OK
           </button>

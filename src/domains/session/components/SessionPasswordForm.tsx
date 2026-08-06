@@ -86,7 +86,7 @@ export function SessionPasswordForm({
         <button
           type="submit"
           disabled={!canSubmit}
-          className="rounded bg-zinc-600 px-2 py-1.5 text-xs text-white hover:bg-zinc-500 disabled:opacity-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400"
+          className="rounded bg-accent px-2 py-1.5 text-xs text-accent-fg hover:bg-accent-hover disabled:opacity-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400"
           tabIndex={0}
         >
           {isBusy ? busyLabel : submitLabel}

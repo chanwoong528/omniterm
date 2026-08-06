@@ -1,5 +1,75 @@
 @import 'tailwindcss';
 
+/* The whole UI is written against the `zinc` scale with dark-mode semantics:
+   zinc-900 is a surface, zinc-100 is body text. Light mode therefore does not
+   need a `dark:` variant on ~460 class names — it redefines the scale itself as
+   a reflection (900 ↔ near-white, 100 ↔ near-black), so every existing utility
+   keeps its role. Same idea for the accent families: only the shades used as
+   tinted backgrounds (900/950) and as text (100–400) are reflected; the solid
+   fill range (500–800, e.g. `bg-emerald-700 text-white`) is theme-independent
+   and stays put. */
+
+@theme {
+  /* Primary action buttons. A separate token because `zinc-600` cannot serve
+     both as "dark fill under white text" and as "light border" in one mode. */
+  --color-accent: #52525b;
+  --color-accent-hover: #71717a;
+  --color-accent-fg: #ffffff;
+}
+
+:root {
+  color-scheme: dark;
+  --scrollbar-thumb: rgb(255 255 255 / 0.14);
+  --scrollbar-thumb-hover: rgb(255 255 255 / 0.28);
+}
+
+:root[data-theme='light'] {
+  color-scheme: light;
+  --scrollbar-thumb: rgb(0 0 0 / 0.18);
+  --scrollbar-thumb-hover: rgb(0 0 0 / 0.32);
+
+  --color-accent: #3f3f46;
+  --color-accent-hover: #27272a;
+  --color-accent-fg: #ffffff;
+
+  --color-zinc-50: #09090b;
+  --color-zinc-100: #18181b;
+  --color-zinc-200: #27272a;
+  --color-zinc-300: #3f3f46;
+  --color-zinc-400: #52525b;
+  --color-zinc-500: #71717a;
+  --color-zinc-600: #a1a1aa;
+  --color-zinc-700: #d4d4d8;
+  --color-zinc-800: #e4e4e7;
+  --color-zinc-900: #f8f8f9;
+  --color-zinc-950: #ffffff;
+
+  --color-red-100: #7f1d1d;
+  --color-red-200: #991b1b;
+  --color-red-300: #b91c1c;
+  --color-red-400: #dc2626;
+  --color-red-900: #fee2e2;
+  --color-red-950: #fef2f2;
+
+  --color-emerald-200: #064e3b;
+  --color-emerald-300: #065f46;
+  --color-emerald-400: #047857;
+  --color-emerald-900: #d1fae5;
+  --color-emerald-950: #ecfdf5;
+
+  --color-amber-200: #78350f;
+  --color-amber-300: #b45309;
+  --color-amber-400: #b45309;
+  --color-amber-900: #fef3c7;
+  --color-amber-950: #fffbeb;
+
+  --color-sky-200: #075985;
+  --color-sky-300: #0369a1;
+  --color-sky-400: #0284c7;
+  --color-sky-900: #e0f2fe;
+  --color-sky-950: #f0f9ff;
+}
+
 body {
   margin: 0;
   overflow: hidden;
@@ -15,13 +85,13 @@ body {
 }
 
 ::-webkit-scrollbar-thumb {
-  background: rgb(255 255 255 / 0.14);
+  background: var(--scrollbar-thumb);
   border-radius: 9999px;
   background-clip: padding-box;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: rgb(255 255 255 / 0.28);
+  background: var(--scrollbar-thumb-hover);
 }
 
 ::-webkit-scrollbar-corner {

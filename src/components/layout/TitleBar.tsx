@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { getCurrentWindow } from '@tauri-apps/api/window';
-import { X, Minus, Square, Copy } from 'lucide-react';
+import { X, Minus, Square, Copy, Settings } from 'lucide-react';
+import { SettingsModal } from '../../domains/settings/components/SettingsModal';
 
 const IS_ACTUALLY_MACOS = navigator.userAgent.includes('Mac');
 
@@ -11,7 +12,40 @@ const FORCED_TITLEBAR = import.meta.env.VITE_TITLEBAR as 'mac' | 'windows' | und
 const IS_MACOS = FORCED_TITLEBAR ? FORCED_TITLEBAR === 'mac' : IS_ACTUALLY_MACOS;
 
 export function TitleBar() {
-  return IS_MACOS ? <MacTitleBar /> : <WindowsTitleBar />;
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const onOpenSettings = () => setIsSettingsOpen(true);
+
+  return (
+    <>
+      {IS_MACOS ? (
+        <MacTitleBar onOpenSettings={onOpenSettings} />
+      ) : (
+        <WindowsTitleBar onOpenSettings={onOpenSettings} />
+      )}
+      {isSettingsOpen && <SettingsModal onClose={() => setIsSettingsOpen(false)} />}
+    </>
+  );
+}
+
+interface TitleBarVariantProps {
+  onOpenSettings: () => void;
+}
+
+// 타이틀바는 창 드래그 영역이므로, 버튼은 useWindowControls의
+// onDragBarMouseDown이 button을 걸러내는 데 의존한다.
+function SettingsButton({ onOpenSettings }: TitleBarVariantProps) {
+  return (
+    <button
+      type="button"
+      onClick={onOpenSettings}
+      className="shrink-0 rounded p-1 text-zinc-500 transition-colors hover:bg-zinc-700/60 hover:text-zinc-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400"
+      aria-label="Open settings"
+      title="Settings"
+      tabIndex={0}
+    >
+      <Settings className="h-4 w-4" aria-hidden />
+    </button>
+  );
 }
 
 function useWindowControls() {
@@ -68,18 +102,22 @@ function useWindowControls() {
 // macOS: 네이티브 신호등 버튼(titleBarStyle: Overlay)이 왼쪽 위에 오버레이되므로
 // 기본적으로는 드래그 영역과 중앙 타이틀만 렌더링한다.
 // 단, 창이 장식 없이(decorations: false) 뜬 경우엔 커스텀 신호등을 폴백으로 그린다.
-function MacTitleBar() {
+function MacTitleBar({ onOpenSettings }: TitleBarVariantProps) {
   const { isDecorated, onMinimize, onClose, onToggleMaximize, onDragBarMouseDown } =
     useWindowControls();
 
   return (
     <div
       role="banner"
-      className="relative flex h-9 shrink-0 items-center border-b border-zinc-800 bg-zinc-900 px-4"
+      className="relative flex h-9 shrink-0 items-center justify-between border-b border-zinc-800 bg-zinc-900 px-4"
       onMouseDown={onDragBarMouseDown}
     >
-      {!isDecorated && (
-        <div className="group flex items-center gap-2">
+      {/* 왼쪽 슬롯: 창 컨트롤이 사는 자리. 네이티브 신호등이 오버레이되는
+          기본 상태에서는 비어 있지만, justify-between이 설정 버튼을 반대쪽
+          끝으로 밀어내도록 항상 렌더링한다. */}
+      <div className="group flex items-center gap-2">
+        {!isDecorated && (
+          <>
           <button
             type="button"
             onClick={onClose}
@@ -107,19 +145,22 @@ function MacTitleBar() {
           >
             <Square className="h-1.5 w-1.5 opacity-0 group-hover:opacity-100" strokeWidth={2.5} />
           </button>
-        </div>
-      )}
+          </>
+        )}
+      </div>
 
       <span className="pointer-events-none absolute left-1/2 -translate-x-1/2 text-sm font-medium text-zinc-400">
         Omniterm
       </span>
+
+      <SettingsButton onOpenSettings={onOpenSettings} />
     </div>
   );
 }
 
 // Windows/Linux: decorations: false이므로 창 컨트롤을 직접 렌더링한다.
 // Windows 표준을 따라 타이틀은 왼쪽, 컨트롤(최소화/최대화/닫기)은 오른쪽에 배치.
-function WindowsTitleBar() {
+function WindowsTitleBar({ onOpenSettings }: TitleBarVariantProps) {
   const { isMaximized, onMinimize, onClose, onToggleMaximize, onDragBarMouseDown } =
     useWindowControls();
 
@@ -137,11 +178,15 @@ function WindowsTitleBar() {
   return (
     <div
       role="banner"
-      className="flex h-9 shrink-0 items-center border-b border-zinc-800 bg-zinc-900"
+      className="flex h-9 shrink-0 items-center justify-between border-b border-zinc-800 bg-zinc-900"
       onMouseDown={onDragBarMouseDown}
     >
-      <div className="pointer-events-none flex flex-1 items-center pl-4 text-sm font-medium text-zinc-400">
-        Omniterm
+      {/* 창 컨트롤이 오른쪽이므로 설정 버튼은 반대쪽 끝, 타이틀 앞에 둔다. */}
+      <div className="flex min-w-0 items-center gap-2 pl-3">
+        <SettingsButton onOpenSettings={onOpenSettings} />
+        <span className="pointer-events-none truncate text-sm font-medium text-zinc-400">
+          Omniterm
+        </span>
       </div>
 
       <div className="flex h-full items-stretch">

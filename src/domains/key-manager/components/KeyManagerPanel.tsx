@@ -147,7 +147,7 @@ export function KeyManagerPanel() {
               type="button"
               onClick={handleAddKey}
               disabled={!newLabel.trim() || !newKeyPath.trim()}
-              className="flex-1 rounded bg-zinc-600 py-1.5 text-sm font-medium text-white hover:bg-zinc-500 disabled:cursor-not-allowed disabled:opacity-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400"
+              className="flex-1 rounded bg-accent py-1.5 text-sm font-medium text-accent-fg hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400"
             >
               Register
             </button>

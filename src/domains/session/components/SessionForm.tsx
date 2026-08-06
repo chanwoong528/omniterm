@@ -297,7 +297,7 @@ export function SessionForm({
             type="button"
             onClick={onImportSshCommand}
             disabled={!importText.trim()}
-            className="shrink-0 rounded bg-zinc-600 px-2.5 py-1 text-xs font-medium text-white hover:bg-zinc-500 disabled:cursor-not-allowed disabled:opacity-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400"
+            className="shrink-0 rounded bg-accent px-2.5 py-1 text-xs font-medium text-accent-fg hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400"
           >
             Import
           </button>
@@ -469,7 +469,7 @@ export function SessionForm({
         <button
           type="submit"
           disabled={!canSubmit}
-          className="flex min-w-0 items-center justify-center gap-2 rounded bg-zinc-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-zinc-500 disabled:cursor-not-allowed disabled:opacity-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400 focus-visible:ring-offset-2 focus-visible:ring-offset-zinc-900"
+          className="flex min-w-0 items-center justify-center gap-2 rounded bg-accent px-4 py-2 text-sm font-medium text-accent-fg transition-colors hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400 focus-visible:ring-offset-2 focus-visible:ring-offset-zinc-900"
           aria-label="Connect to server"
         >
           <Server className="h-4 w-4" aria-hidden />

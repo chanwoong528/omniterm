@@ -3,10 +3,21 @@ import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import { listen } from '@tauri-apps/api/event';
 import { invoke } from '@tauri-apps/api/core';
+import { useAppearanceStore } from '../../stores/appearanceStore';
+import { resolveXtermTheme } from '../../domains/appearance/xtermThemes';
 import '@xterm/xterm/css/xterm.css';
 
 const TERMINAL_OUTPUT_EVENT = 'terminal-output';
 const SESSION_DISCONNECTED_EVENT = 'session-disconnected';
+
+/** xterm lightens/darkens any glyph that falls below this against the
+ *  background. The palettes below already clear it, but a remote shell picks its
+ *  own colors — a PS1 or LS_COLORS tuned for a dark background, or a 256-color
+ *  escape that bypasses the palette entirely — and those would otherwise render
+ *  unreadable on a light theme. 4.5 is WCAG AA, and the same default VS Code
+ *  ships. It only ever raises contrast, so it also mutes the character of
+ *  deliberately low-contrast themes such as Solarized. */
+const MINIMUM_CONTRAST_RATIO = 4.5;
 
 interface TerminalViewProps {
   sessionId: string;
@@ -35,6 +46,10 @@ export function TerminalView({ sessionId, isActive }: TerminalViewProps) {
   const decoderRef = useRef<TextDecoder>(new TextDecoder('utf-8'));
   const lastSentSizeRef = useRef<{ cols: number; rows: number } | null>(null);
   const [disconnectReason, setDisconnectReason] = useState<string | null>(null);
+
+  const appearanceMode = useAppearanceStore((s) => s.mode);
+  const terminalThemeId = useAppearanceStore((s) => s.terminalThemeIdByMode[s.mode]);
+  const xtermTheme = resolveXtermTheme(appearanceMode, terminalThemeId);
 
   const writeToBackend = useCallback(
     (data: string) => {
@@ -66,18 +81,19 @@ export function TerminalView({ sessionId, isActive }: TerminalViewProps) {
     const el = containerRef.current;
     if (!el) return;
 
+    // Read imperatively rather than from the render-scoped value: a theme
+    // change must repaint the existing terminal (see the effect below), never
+    // land in this effect's deps and re-create it — that would wipe the
+    // scrollback and restart the shell.
+    const { mode, terminalThemeIdByMode } = useAppearanceStore.getState();
+
     const term = new Terminal({
-      theme: {
-        background: '#18181b',
-        foreground: '#e4e4e7',
-        cursor: '#e4e4e7',
-        cursorAccent: '#18181b',
-        selectionBackground: 'rgba(255, 255, 255, 0.2)',
-      },
+      theme: resolveXtermTheme(mode, terminalThemeIdByMode[mode]),
       fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
       fontSize: 13,
       cursorBlink: true,
       scrollback: 5000,
+      minimumContrastRatio: MINIMUM_CONTRAST_RATIO,
     });
 
     const fitAddon = new FitAddon();
@@ -156,6 +172,13 @@ export function TerminalView({ sessionId, isActive }: TerminalViewProps) {
       fitAddonRef.current = null;
     };
   }, [sessionId, writeToBackend, fitAndResizeRemote]);
+
+  // Repaint a live terminal when the mode or the picked theme changes.
+  useEffect(() => {
+    const term = terminalRef.current;
+    if (!term) return;
+    term.options.theme = xtermTheme;
+  }, [xtermTheme]);
 
   // Refit whenever the container's box changes — window resize, splitter
   // drags, and SFTP-panel resizes all land here via ResizeObserver.
