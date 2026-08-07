@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import type { SavedSession } from '../types/session';
 import type { PortForwardRule } from '../types/port-forward';
+import { moveSessionInList } from '../domains/session/utils/reorderSessions';
 
 interface SessionState {
   savedSessions: SavedSession[];
@@ -13,6 +14,11 @@ interface SessionState {
   markConnected: (id: string) => void;
   upsertPortForwardRule: (sessionId: string, rule: PortForwardRule) => void;
   removePortForwardRule: (sessionId: string, ruleId: string) => void;
+  /** Edit-mode DnD: move session into a folder/root and insert before `beforeId` (null = append). */
+  moveSession: (
+    sessionId: string,
+    destination: { folder: string | undefined; beforeId: string | null }
+  ) => void;
 }
 
 const STORAGE_KEY = 'omniterm:sessions:v1';
@@ -79,6 +85,10 @@ export const useSessionStore = create<SessionState>()(
             savedSessions: upsert(state.savedSessions, { ...session, portForwards: nextRules }),
           };
         }),
+      moveSession: (sessionId, destination) =>
+        set((state) => ({
+          savedSessions: moveSessionInList(state.savedSessions, sessionId, destination),
+        })),
     }),
     {
       name: STORAGE_KEY,

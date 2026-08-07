@@ -27,3 +27,6 @@ dist-ssr
 *.sw?
 *.mxtsessions
 website/.astro/
+
+# AI tools
+.omc

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Server, Key, ChevronDown, ChevronUp } from 'lucide-react';
+import { Server, Key, ChevronDown, ChevronUp, Pencil, Check } from 'lucide-react';
 import type { BastionConfig, TargetServerConfig } from '../../domains/session/types';
 import { useEstablishConnection } from '../../domains/session/hooks/useEstablishConnection';
 import { useTerminalStore } from '../../stores/terminalStore';
@@ -34,6 +34,7 @@ const SUCCESS_TOAST_HIDE_MS = 2500;
 
 export function Sidebar({ widthPx }: SidebarProps) {
   const [activeTab, setActiveTab] = useState<SidebarTab>('sessions');
+  const [isEditingSessions, setIsEditingSessions] = useState(false);
   const {
     establishConnection,
     testConnection,
@@ -217,7 +218,10 @@ export function Sidebar({ widthPx }: SidebarProps) {
               aria-selected={activeTab === tab.id}
               aria-controls={`panel-${tab.id}`}
               id={`tab-${tab.id}`}
-              onClick={() => setActiveTab(tab.id)}
+              onClick={() => {
+                setActiveTab(tab.id);
+                if (tab.id !== 'sessions') setIsEditingSessions(false);
+              }}
               className={`flex min-w-0 flex-1 items-center justify-center gap-1.5 overflow-hidden px-2 py-2.5 text-xs font-medium transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-zinc-400 ${
                 activeTab === tab.id
                   ? 'border-b-2 border-zinc-400 bg-zinc-800 text-zinc-100'
@@ -244,7 +248,28 @@ export function Sidebar({ widthPx }: SidebarProps) {
               <h3 className="text-xs font-medium uppercase tracking-wide text-zinc-500">
                 Saved sessions
               </h3>
-              <ImportMxtSessionsButton />
+              <div className="flex shrink-0 items-center gap-0.5">
+                {isEditingSessions && <ImportMxtSessionsButton />}
+                <button
+                  type="button"
+                  onClick={() => setIsEditingSessions((prev) => !prev)}
+                  className={`flex items-center gap-1 rounded px-2 py-1 text-xs font-medium focus:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400 ${
+                    isEditingSessions
+                      ? 'text-emerald-400 hover:bg-zinc-700 hover:text-emerald-300'
+                      : 'text-zinc-400 hover:bg-zinc-700 hover:text-zinc-200'
+                  }`}
+                  aria-pressed={isEditingSessions}
+                  aria-label={isEditingSessions ? 'Done editing sessions' : 'Edit saved sessions'}
+                  title={isEditingSessions ? 'Done' : 'Edit'}
+                >
+                  {isEditingSessions ? (
+                    <Check className="h-3.5 w-3.5" aria-hidden />
+                  ) : (
+                    <Pencil className="h-3.5 w-3.5" aria-hidden />
+                  )}
+                  {isEditingSessions ? 'Done' : 'Edit'}
+                </button>
+              </div>
             </div>
             {passwordPromptSession && (
               <div className="mb-3">
@@ -263,6 +288,7 @@ export function Sidebar({ widthPx }: SidebarProps) {
               onConnectSavedSession={connectSavedSession}
               onOpenPortForward={(session) => setPortForwardSessionId(session.id)}
               isConnecting={isConnecting}
+              isEditMode={isEditingSessions}
             />
           </div>
           <SessionForm
