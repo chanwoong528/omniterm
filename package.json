@@ -12,6 +12,7 @@
     "tauri:dev": "tauri dev",
     "tauri:build": "tauri build",
     "tauri:build:local": "CI=false tauri build",
+    "astro:dev": "npm --prefix website run dev",
     "release:bump": "bash scripts/bump-and-release.sh",
     "release:re": "bash scripts/re-release.sh",
     "release:build": "bash scripts/build-release-local.sh"
