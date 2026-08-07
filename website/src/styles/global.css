@@ -1,5 +1,16 @@
 @import "tailwindcss";
 
+:root {
+  /* sticky GNB 높이: py-3.5(28px) + 로고 24px + border-b 1px.
+     좁은 폭에서도 이 높이는 그대로다 — 라벨이 줄바꿈되지 않게 막아두었기 때문. */
+  --gnb-height: 53px;
+  --gnb-anchor-gap: 1.5rem;
+}
+
 html {
   scroll-behavior: smooth;
+  /* #download 같은 앵커로 이동할 때 대상이 sticky GNB 아래로 들어가지 않게 한다.
+     타깃마다 scroll-margin-top을 붙이는 대신 스크롤 컨테이너에 한 번만 선언해
+     지금 있는 앵커와 앞으로 추가되는 앵커가 모두 적용받는다. */
+  scroll-padding-top: calc(var(--gnb-height) + var(--gnb-anchor-gap));
 }
