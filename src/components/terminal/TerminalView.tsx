@@ -71,9 +71,15 @@ export function TerminalView({ sessionId, isActive }: TerminalViewProps) {
     const { cols, rows } = term;
     const last = lastSentSizeRef.current;
     if (last && last.cols === cols && last.rows === rows) return;
-    lastSentSizeRef.current = { cols, rows };
+    const size = { cols, rows };
+    // Record the size only once the backend accepted it. The first calls land
+    // before the shell is registered (ResizeObserver fires on mount) and fail;
+    // marking them as sent would make the post-spawn retry a no-op and leave
+    // the remote PTY at 80x24 while xterm is far wider — bash then wraps and
+    // overwrites the prompt on long input lines.
+    lastSentSizeRef.current = size;
     invoke('resize_pty', { sessionId, cols, rows }).catch(() => {
-      // Shell may not be up yet; the post-spawn resize below retries.
+      if (lastSentSizeRef.current === size) lastSentSizeRef.current = null;
     });
   }, [sessionId]);
 
@@ -146,11 +152,21 @@ export function TerminalView({ sessionId, isActive }: TerminalViewProps) {
         return;
       }
 
+      // Open the PTY at the real geometry so the shell never sees 80x24.
+      // On a hidden tab the container has no size and fit() is a no-op; the
+      // activation effect refits and resizes once it becomes visible.
+      const el = containerRef.current;
+      if (el && el.offsetWidth > 0 && el.offsetHeight > 0) fitAddon.fit();
+      const spawnSize = { cols: term.cols, rows: term.rows };
       try {
-        await invoke('spawn_pty_process', { sessionId });
+        await invoke('spawn_pty_process', { sessionId, ...spawnSize });
+        // The PTY opened at exactly this size; a later fit only resends on change.
+        lastSentSizeRef.current = spawnSize;
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
-        // "already running" happens on a remount over a live session — benign.
+        // "already running" happens on a remount over a live session — benign,
+        // but the live PTY's size is unknown, so leave lastSentSizeRef unset
+        // and let the fit below resync it.
         if (!message.toLowerCase().includes('already running')) {
           terminalRef.current?.writeln(`\r\n[Error] Failed to start shell: ${message}`);
           setDisconnectReason(message);
@@ -158,7 +174,7 @@ export function TerminalView({ sessionId, isActive }: TerminalViewProps) {
         }
       }
       if (disposed) return;
-      // Sync the freshly spawned PTY to the real geometry (it starts at 80×24).
+      // The container may have changed size while the spawn was in flight.
       fitAndResizeRemote();
     };
     void setup();

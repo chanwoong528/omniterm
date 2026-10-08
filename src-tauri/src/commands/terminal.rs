@@ -4,9 +4,17 @@ use std::sync::Arc;
 use tauri::AppHandle;
 use tauri::State;
 
+/// Fallback PTY geometry when the client could not measure itself yet.
+const DEFAULT_PTY_COLS: u32 = 80;
+const DEFAULT_PTY_ROWS: u32 = 24;
+
+/// Spawns the remote shell. `cols`/`rows` set the initial PTY geometry so the
+/// shell starts with the client's real size instead of the 80x24 default.
 #[tauri::command]
 pub async fn spawn_pty_process(
     session_id: String,
+    cols: Option<u32>,
+    rows: Option<u32>,
     ssh_manager: State<'_, Arc<ssh::SshSessionManager>>,
     shell_manager: State<'_, Arc<terminal::ShellWriteManager>>,
     app: AppHandle,
@@ -16,11 +24,15 @@ pub async fn spawn_pty_process(
         .ok_or_else(|| "Session not found".to_string())?;
 
     let (tx, rx) = std::sync::mpsc::channel();
+    let pty_size = (
+        cols.filter(|&c| c > 0).unwrap_or(DEFAULT_PTY_COLS),
+        rows.filter(|&r| r > 0).unwrap_or(DEFAULT_PTY_ROWS),
+    );
 
     // Register first: this is the duplicate-spawn guard. A second call for the
     // same session fails here instead of spawning a competing shell thread.
     shell_manager.register(session_id.clone(), tx)?;
-    if let Err(e) = terminal::spawn_shell_thread(session, session_id.clone(), app, rx) {
+    if let Err(e) = terminal::spawn_shell_thread(session, session_id.clone(), app, rx, pty_size) {
         shell_manager.close(&session_id);
         return Err(e);
     }

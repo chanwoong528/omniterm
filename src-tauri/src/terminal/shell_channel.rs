@@ -44,11 +44,13 @@ const KEEPALIVE_INTERVAL: Duration = Duration::from_secs(30);
 
 /// Runs the shell channel loop in a dedicated thread: owns Session and Channel,
 /// reads from channel and emits to frontend, receives control messages via rx.
+/// `pty_size` is `(cols, rows)` for the initial PTY request.
 pub fn spawn_shell_thread(
     session: Session,
     session_id: String,
     app: AppHandle,
     write_rx: mpsc::Receiver<ShellMsg>,
+    pty_size: (u32, u32),
 ) -> Result<(), String> {
     thread::spawn(move || {
         let mut channel = match session.channel_session() {
@@ -59,7 +61,8 @@ pub fn spawn_shell_thread(
                 return;
             }
         };
-        if let Err(e) = channel.request_pty("xterm-256color", None, None) {
+        let (cols, rows) = pty_size;
+        if let Err(e) = channel.request_pty("xterm-256color", None, Some((cols, rows, 0, 0))) {
             let _ = emit_error(&app, &session_id, &e.to_string());
             let _ = emit_disconnected(&app, &session_id, &e.to_string());
             return;
