@@ -1,143 +1,189 @@
 # OmniTerm
 
-macOS 및 Windows용 통합 터미널 & SFTP 클라이언트. SSH(직접/바스천), 터미널 탭, SFTP 파일 탐색·드래그 앤 드롭 업로드, 키 매니저, 세션 저장.
+**English** | [한국어](README.ko.md)
 
-**기술 스택:** Tauri v2, React, TypeScript, Tailwind CSS, xterm.js, ssh2 (Rust).
+A terminal and SFTP client for macOS and Windows. Connect over SSH directly or through a bastion host, keep several servers open in tabs, and move files with drag and drop, all from one window.
 
----
+- **Homepage:** [chanwoong528.github.io/omniterm](https://chanwoong528.github.io/omniterm)
+- **Latest release:** [github.com/chanwoong528/omniterm/releases/latest](https://github.com/chanwoong528/omniterm/releases/latest)
 
-## 다운로드 (설치 파일)
-
-- **홈페이지: [chanwoong528.github.io/omniterm](https://chanwoong528.github.io/omniterm)** 에서 OS에 맞는 설치 파일을 바로 받을 수 있습니다.
-- 또는 **[Releases](https://github.com/chanwoong528/omniterm/releases)** 에서 버전별 빌드 파일을 받을 수 있습니다.
-- **macOS – Apple Silicon (M1/M2/M3)** → `OmniTerm_*_aarch64.dmg`
-- **macOS – Intel** → `OmniTerm_*_x64.dmg`
-- **Windows** → `OmniTerm_*_x64-setup.exe` 또는 `OmniTerm_*_x64.msi`
-
-**Windows:** 다운로드 후 "Windows에서 PC를 보호했습니다" 경고가 나오면 **추가 정보** → **실행**을 선택하면 됩니다. 경고를 없애려면 코드 서명이 필요합니다. → [docs/WINDOWS-CODE-SIGNING.md](docs/WINDOWS-CODE-SIGNING.md)
+<img src="website/src/assets/screenshots/hero.png" alt="OmniTerm window with a saved-sessions sidebar, an SFTP list of /home/deploy/app, and a terminal on a production server showing recent commits, service checks, access logs and the API service journal." width="800">
 
 ---
 
-## "손상됨" 경고 없이 실행하기
+## Features
 
-DMG를 다운로드한 뒤 앱을 실행하려고 하면 macOS에서 **"손상되었기 때문에 열 수 없습니다"** 라는 메시지가 나올 수 있습니다. 앱이 실제로 손상된 것이 아니라, 인터넷에서 받은 앱에 대한 보안 정책 때문입니다. 아래 순서대로 하면 정상적으로 실행할 수 있습니다.
+- **Direct or bastion SSH** — Connect to a server directly or through a bastion (jump host). You set up both hops in the session form, each with its own key, instead of writing a `ProxyCommand`.
+- **Terminal tabs** — Open sessions to several servers as tabs and switch between them in one window. The terminal is built on xterm.js.
+- **SFTP file explorer** — Browse remote files and upload by dropping them onto the panel. It sits next to the terminal, so you don't need a separate SFTP app.
+- **Key manager** — Register your SSH keys once in the app, then pick one from a list when you set up a session instead of typing a key path every time.
+- **Saved sessions** — Save connection details, group them in folders, and reconnect with one click.
+- **macOS and Windows** — A native Tauri app with the same interface on Apple Silicon and Intel Macs and on 64-bit Windows.
 
-### 1. DMG에서 앱 복사하기
+---
 
-1. 다운로드한 **`OmniTerm_0.1.3_aarch64.dmg`** (또는 해당 버전의 DMG)를 **더블클릭**해서 디스크 이미지를 엽니다.
-2. 열린 창에서 **OmniTerm.app**을 **응용 프로그램** 폴더로 드래그해서 복사합니다. (다른 폴더에 넣어도 됩니다.)
+## Download
 
-### 2. 터미널에서 quarantine 속성 제거하기
+Get the installer for your OS from the [homepage](https://chanwoong528.github.io/omniterm), or pick a version on the [Releases](https://github.com/chanwoong528/omniterm/releases) page.
 
-**터미널**(Spotlight에서 "터미널" 검색 후 실행)을 연 뒤, 아래 중 앱을 넣은 위치에 맞는 명령을 **그대로 복사해서 실행**하세요.
+| Platform | File |
+|---|---|
+| macOS (Apple Silicon, M1 or later) | `Omniterm_<version>_aarch64.dmg` |
+| macOS (Intel) | `Omniterm_<version>_x64.dmg` |
+| Windows (64-bit) | `Omniterm_<version>_x64.exe` (installer) or `Omniterm_<version>_x64.msi` |
 
-- **응용 프로그램** 폴더에 넣었다면:
+OmniTerm is not code-signed yet, so macOS and Windows show a security warning the first time you open it. See the next section.
+
+---
+
+## Running without the "damaged" warning
+
+The app is not actually damaged. macOS and Windows block unsigned apps downloaded from the internet by default, and the steps below tell them to let OmniTerm run.
+
+### macOS
+
+After you download the DMG and try to open the app, macOS may say the app **is damaged and can't be opened**. Follow these steps once.
+
+#### 1. Copy the app out of the DMG
+
+1. **Double-click** the DMG you downloaded (for example `Omniterm_<version>_aarch64.dmg`) to open the disk image.
+2. Drag **OmniTerm.app** from the window that opens into your **Applications** folder. Any other folder works too.
+
+#### 2. Remove the quarantine attribute in Terminal
+
+Open **Terminal** (search for "Terminal" in Spotlight), then copy and run the command that matches where you put the app.
+
+- If you put it in **Applications**:
   ```bash
   xattr -cr /Applications/OmniTerm.app
   ```
-- **다운로드** 폴더에 그대로 두었다면:
+- If you left it in **Downloads**:
   ```bash
   xattr -cr ~/Downloads/OmniTerm.app
   ```
-- **바탕화면** 등 다른 폴더에 넣었다면, `경로/OmniTerm.app` 부분만 실제 위치로 바꿔서 실행하세요.
+- If you put it somewhere else, such as the **Desktop**, replace the path before `OmniTerm.app` with the real location:
   ```bash
   xattr -cr ~/Desktop/OmniTerm.app
   ```
 
-비밀번호를 묻으면 Mac 로그인 비밀번호를 입력하면 됩니다. 한 번만 실행해 두면 됩니다.
+If Terminal asks for a password, enter your Mac login password. You only need to run this once per install.
 
-### 3. 앱 실행하기
+#### 3. Open the app
 
-이제 **OmniTerm.app**을 더블클릭해서 실행하면 "손상됨" 메시지 없이 열립니다.
+Double-click **OmniTerm.app**. It now opens without the "damaged" message.
+
+### Windows
+
+If SmartScreen shows **Windows protected your PC** after you run the installer, choose **More info → Run anyway**. The warning goes away only once the installer is code-signed; see [docs/WINDOWS-CODE-SIGNING.md](docs/WINDOWS-CODE-SIGNING.md) (in Korean).
 
 ---
 
-## 로컬에서 실행
+## Development
+
+OmniTerm is a Tauri v2 app. The front end uses React, TypeScript, Tailwind CSS and xterm.js; the Rust backend uses `ssh2` (libssh2).
+
+### Requirements
+
+- **Rust 1.85 or later** — Tauri v2 dependencies use the 2024 edition. See [docs/RUST-VERSION.md](docs/RUST-VERSION.md) (in Korean).
+- **Node.js 20.19+ or 22.12+** — the minimum Vite 7 supports.
+- **Tauri system dependencies** — Xcode Command Line Tools on macOS, Microsoft C++ Build Tools and WebView2 on Windows. See the [Tauri prerequisites](https://v2.tauri.app/start/prerequisites/).
+
+### Run locally
 
 ```bash
 npm install
 npm run tauri:dev
 ```
 
----
+### npm scripts
 
-## 주요 npm 스크립트
+| Script | What it does |
+|---|---|
+| `npm run dev` | Starts only the Vite dev server |
+| `npm run build` | Type-checks with TypeScript, then builds with Vite |
+| `npm run lint` | Runs ESLint |
+| `npm run preview` | Starts the Vite preview server |
+| `npm run tauri` | Calls the Tauri CLI directly |
+| `npm run tauri:dev` | Runs the Tauri app in development mode (front end and backend) |
+| `npm run tauri:build` | Builds the Tauri app for production |
+| `npm run tauri:build:local` | Builds for this machine's architecture only, with `CI=false` (macOS) |
+| `npm run astro:dev` | Starts the dev server for the landing page in `website/` |
+| `npm run shots` | Captures the landing-page screenshots from the real app UI into `website/src/assets/screenshots/` (uses the installed Google Chrome) |
+| `npm run release:bump` | Bumps the version (`patch` / `minor` / `major`), then pushes `main` and a tag. Tag only: it does not build installers (see [Releasing](#releasing)) |
+| `npm run release:re` | Re-pushes the tag for an existing version (for example `v0.1.5 -d -y`; usage is in `scripts/re-release.sh`). Tag only, like `release:bump` |
+| `npm run release:build` | Runs a local release build and prints where the output files are |
 
-| 스크립트 | 설명 |
-|----------|------|
-| `npm run dev` | Vite 개발 서버만 실행 |
-| `npm run build` | TypeScript 빌드 + Vite 빌드 |
-| `npm run lint` | ESLint 실행 |
-| `npm run preview` | Vite 프리뷰 서버 |
-| `npm run tauri` | Tauri CLI 직접 호출 |
-| `npm run tauri:dev` | Tauri 앱 개발 모드 (프론트+백엔드) |
-| `npm run tauri:build` | Tauri 프로덕션 빌드 |
-| `npm run tauri:build:local` | 로컬 아키텍처만 빌드 (CI 스킵, macOS) |
-| `npm run release:bump` | 버전 bump 후 main 푸시·태그 푸시 (인자: `patch` / `minor` / `major`) |
-| `npm run release:re` | 같은 버전으로 다시 릴리스 (인자: `v0.1.5 -d -y` 등, [docs/RELEASE-STEPS.md](docs/RELEASE-STEPS.md) 참고) |
-| `npm run release:build` | 로컬에서 릴리스 빌드 실행 후 결과물 경로 출력 |
+### Build locally
 
----
-
-## 로컬에서 빌드 (설치용 파일 만들기)
-
-**macOS – 본인 Mac과 같은 아키텍처만** 빌드할 때:
+To build an installer for **the same architecture as your Mac**:
 
 ```bash
 npm ci
 npm run tauri:build:local
 ```
 
-**macOS – Intel(x86_64)용을 Apple Silicon Mac에서** 빌드할 때는 먼저 타깃을 설치한 뒤 빌드하세요:
+To build for **Intel (x86_64) on an Apple Silicon Mac**, add the target first:
 
 ```bash
 rustup target add x86_64-apple-darwin
 npm run tauri build -- --target x86_64-apple-darwin
 ```
 
-**Windows** 에서 빌드할 때:
+On **Windows**:
 
 ```bash
 npm ci
 npm run tauri build
 ```
 
-생성 위치:
+Output:
 
-- **macOS 앱:** `src-tauri/target/release/bundle/macos/OmniTerm.app`
+- **macOS app:** `src-tauri/target/release/bundle/macos/Omniterm.app`
 - **macOS DMG:** `src-tauri/target/release/bundle/dmg/`
-- **Windows:** `src-tauri/target/release/bundle/msi/` 또는 `nsis/`
+- **Windows:** `src-tauri/target/release/bundle/msi/` or `nsis/`
+
+A build with `--target` writes to `src-tauri/target/<target>/release/bundle/` instead.
 
 ---
 
-## 릴리스 빌드 (GitHub에서 자동)
+## Releasing
 
-1. **버전 올리기**  
-   `src-tauri/tauri.conf.json` 의 `version` 과 `package.json` 의 `version` 을 맞춰 수정합니다.
+Two GitHub Actions workflows are involved:
 
-2. **태그 푸시로 빌드·릴리스**  
-   같은 버전으로 태그를 만들고 푸시하면 GitHub Actions 가 빌드 후 **Draft Release** 에 DMG 를 첨부합니다.
+- **Bump Version** (`.github/workflows/bump-version.yml`) runs on every push to `main`, bumps the patch version and pushes a tag. It is skipped when the head commit message contains `[skip ci]`, or when only `website/**` or `.github/**` changed.
+- **Release** (`.github/workflows/release.yml`) builds macOS (Apple Silicon and Intel) and Windows x64 and uploads them to the GitHub Release. It skips the build if the tagged commit's message contains `[skip release]`.
 
-   ```bash
-   git tag v0.1.0
-   git push origin v0.1.0
-   ```
+A release commit needs `[skip ci]` so Bump Version doesn't bump again. GitHub also honors `[skip ci]` on the tag push, so **pushing the tag does not start the build**. You start it by hand on the tag:
 
-3. **또는 `release` 브랜치로**  
-   `release` 브랜치에 푸시해도 동일 워크플로가 실행됩니다.
+```bash
+# 1. Set the same version in package.json, src-tauri/tauri.conf.json and src-tauri/Cargo.toml,
+#    then regenerate both lockfiles
+npm install --package-lock-only
+(cd src-tauri && cargo check)
 
-4. **GitHub**  
-   저장소 **Actions** 탭에서 진행 상황을 보고, **Releases** 에서 Draft 를 열어 첨부된 파일을 확인한 뒤 **Publish** 하면 됩니다.
+# 2. Commit with [skip ci], and never with [skip release]
+git add package.json package-lock.json src-tauri/tauri.conf.json \
+        src-tauri/Cargo.toml src-tauri/Cargo.lock
+git commit -m "chore: release vX.Y.Z [skip ci]"
+git push origin main
+
+# 3. Tag and push
+git tag vX.Y.Z && git push origin vX.Y.Z
+
+# 4. Start the build on the tag and wait for it
+gh workflow run release.yml --ref vX.Y.Z
+gh run watch <run-id> --exit-status
+
+# 5. After the build succeeds, replace the generated release notes
+gh release edit vX.Y.Z --notes-file <file>
+```
+
+`npm run release:bump` and `npm run release:re` add `[skip release]` to their commit, so use them only when you want a tag without installers. Docs-only pushes to `main` also need `[skip ci]`, or Bump Version mints a new version for them.
+
+The full rules, including the release-note format, are in the "Releasing" and "Release notes" sections of [CLAUDE.md](CLAUDE.md). A step-by-step guide that also covers rebuilding a version and tag-only releases is in [docs/RELEASE-STEPS.md](docs/RELEASE-STEPS.md) (in Korean).
 
 ---
 
-## 요구사항
+## License
 
-- **Rust 1.85+** (빌드 시, [docs/RUST-VERSION.md](docs/RUST-VERSION.md) 참고)
-- **Node.js 18+**
-
----
-
-## 라이선스
-
-MIT
+[MIT](LICENSE)

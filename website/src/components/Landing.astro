@@ -16,6 +16,11 @@ const base = import.meta.env.BASE_URL.replace(/\/$/, '');
 const REPO_URL = 'https://github.com/chanwoong528/omniterm';
 const RELEASES_URL = `${REPO_URL}/releases`;
 const LATEST_URL = `${REPO_URL}/releases/latest`;
+// 미서명 앱 경고 해결 안내. 언어별 README의 해당 섹션 앵커로 보낸다(제목을 바꾸면 앵커도 바뀐다).
+const installGuideHref =
+  lang === 'en'
+    ? `${REPO_URL}#running-without-the-damaged-warning`
+    : `${REPO_URL}/blob/main/README.ko.md#손상됨-경고-없이-실행하기`;
 
 const SITE = 'https://chanwoong528.github.io';
 const koUrl = `${SITE}${base}/`;
@@ -228,7 +233,7 @@ const LANG_LINK_INACTIVE = 'text-zinc-400 transition hover:text-zinc-200';
                 <code class="rounded bg-zinc-800 px-1.5 py-0.5 font-mono text-xs text-emerald-300">xattr -cr /Applications/OmniTerm.app</code>
                 {t.installMacPost}
                 <a
-                  href={`${REPO_URL}#손상됨-경고-없이-실행하기`}
+                  href={installGuideHref}
                   target="_blank"
                   rel="noopener"
                   class="underline decoration-zinc-700 underline-offset-2 hover:text-zinc-200">{t.installMacLink}</a
