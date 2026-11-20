@@ -1,0 +1,127 @@
+{
+  "generatedBy": "npm run shots (scripts/landing-shots/capture.mjs)",
+  "devicePixelRatio": 2,
+  "theme": "dark",
+  "images": {
+    "hero.png": {
+      "logicalSize": {
+        "width": 1200,
+        "height": 599
+      },
+      "pixelSize": {
+        "width": 2400,
+        "height": 1198
+      },
+      "shows": "The full OmniTerm window on macOS: saved-sessions sidebar, three terminal tabs, the SFTP browser and a busy shell.",
+      "alt": {
+        "en": "OmniTerm window with a saved-sessions sidebar, an SFTP list of /home/deploy/app, and a terminal on a production server showing recent commits, service checks, access logs and the API service journal.",
+        "ko": "저장된 세션 사이드바, /home/deploy/app의 SFTP 파일 목록, 운영 서버의 최근 커밋·서비스 상태·접근 로그·API 서비스 로그를 보여 주는 터미널이 있는 OmniTerm 창"
+      }
+    },
+    "hero-mobile.png": {
+      "logicalSize": {
+        "width": 440,
+        "height": 467
+      },
+      "pixelSize": {
+        "width": 880,
+        "height": 934
+      },
+      "shows": "The terminal tab bar and shell from the hero shot, cropped for narrow screens.",
+      "alt": {
+        "en": "OmniTerm terminal with three server tabs open, showing service status, disk usage, access logs and the API service journal on a production server.",
+        "ko": "서버 탭 세 개가 열린 OmniTerm 터미널. 운영 서버의 서비스 상태, 디스크 사용량, 접근 로그, API 서비스 로그가 보인다."
+      }
+    },
+    "feature-bastion.png": {
+      "logicalSize": {
+        "width": 460,
+        "height": 517
+      },
+      "pixelSize": {
+        "width": 920,
+        "height": 1034
+      },
+      "shows": "The session form reaching a private host through a bastion (jump host).",
+      "alt": {
+        "en": "Session form with \"Use Bastion (Jump Host)\" checked: the target deploy@10.0.1.20 is reached through ubuntu@bastion.example.com, each with its own private key.",
+        "ko": "Use Bastion (Jump Host)가 체크된 세션 폼. 대상 서버 deploy@10.0.1.20에 ubuntu@bastion.example.com을 거쳐 접속하고, 두 서버가 각자 다른 개인 키를 쓴다."
+      }
+    },
+    "feature-tabs.png": {
+      "logicalSize": {
+        "width": 520,
+        "height": 307
+      },
+      "pixelSize": {
+        "width": 1040,
+        "height": 614
+      },
+      "shows": "Several servers open at once as terminal tabs.",
+      "alt": {
+        "en": "Three terminal tabs for different servers; the active staging tab shows a git pull, a service restart, a health check and the deployed commit.",
+        "ko": "서버별 터미널 탭 세 개. 활성화된 스테이징 탭에 git pull, 서비스 재시작, 헬스 체크, 배포된 커밋이 보인다."
+      }
+    },
+    "feature-sftp.png": {
+      "logicalSize": {
+        "width": 460,
+        "height": 480
+      },
+      "pixelSize": {
+        "width": 920,
+        "height": 960
+      },
+      "shows": "The SFTP panel browsing a remote folder while dropped files upload.",
+      "alt": {
+        "en": "SFTP panel listing /home/deploy/app with sizes and dates, an upload of two files in progress and a \"Drop files to upload\" hint.",
+        "ko": "/home/deploy/app의 파일 크기와 수정일을 보여 주는 SFTP 패널. 파일 두 개 업로드 진행 상태와 \"Drop files to upload\" 안내가 보인다."
+      }
+    },
+    "feature-keys.png": {
+      "logicalSize": {
+        "width": 460,
+        "height": 297
+      },
+      "pixelSize": {
+        "width": 920,
+        "height": 594
+      },
+      "shows": "The Key Manager tab listing registered private keys.",
+      "alt": {
+        "en": "Key Manager tab listing four registered private keys: deploy_ed25519, bastion, staging_rsa and build-runner.",
+        "ko": "등록된 개인 키 네 개(deploy_ed25519, bastion, staging_rsa, build-runner)가 보이는 Key Manager 탭"
+      }
+    },
+    "feature-sessions.png": {
+      "logicalSize": {
+        "width": 460,
+        "height": 298
+      },
+      "pixelSize": {
+        "width": 920,
+        "height": 596
+      },
+      "shows": "Saved sessions grouped in a folder, with last-connected dates and a running port-forward badge.",
+      "alt": {
+        "en": "Saved sessions: a Production folder with prod-api, db-replica (one port forward running) and bastion, plus staging-web and build-runner.",
+        "ko": "저장된 세션 목록. Production 폴더에 prod-api, db-replica(포트 포워딩 1개 실행 중), bastion이 있고 그 아래 staging-web, build-runner가 있다."
+      }
+    },
+    "feature-macos.png": {
+      "logicalSize": {
+        "width": 520,
+        "height": 380
+      },
+      "pixelSize": {
+        "width": 1040,
+        "height": 760
+      },
+      "shows": "Top-left corner of the macOS window: traffic-light buttons, title bar, sidebar and the first terminal tabs.",
+      "alt": {
+        "en": "Corner of the OmniTerm window on macOS: red, yellow and green window buttons, the Omniterm title bar, the saved-sessions sidebar and terminal tabs.",
+        "ko": "macOS에서 본 OmniTerm 창의 왼쪽 위. 빨강·노랑·초록 창 버튼, Omniterm 타이틀 바, 저장된 세션 사이드바, 터미널 탭이 보인다."
+      }
+    }
+  }
+}

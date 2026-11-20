@@ -1,0 +1,68 @@
+---
+// 첫 화면 대표 이미지. 640px(Tailwind sm) 미만은 터미널 부분만 찍은 hero-mobile, 그 이상은 창 전체(hero)를 쓴다.
+// Astro 5 <Picture>는 media마다 다른 이미지를 고르지 못해서 getImage()로 만든 srcset으로 <source>를 직접 짠다.
+import type { ImageMetadata } from 'astro';
+import { getImage } from 'astro:assets';
+import heroImage from '../assets/screenshots/hero.png';
+import heroMobileImage from '../assets/screenshots/hero-mobile.png';
+import {
+  getLogicalSize,
+  getSrcsetWidths,
+  SCREENSHOT_FALLBACK_FORMAT,
+  SCREENSHOT_SOURCE_FORMATS,
+} from '../screenshots';
+
+interface Props {
+  alt: string;
+}
+const { alt } = Astro.props;
+
+// sm(40rem) 바로 아래까지. 소수점 너비(브라우저 확대)에서도 두 media 사이에 빈틈이 없게 한다.
+const MOBILE_MEDIA = '(max-width: 639.98px)';
+
+/* sizes는 아래 마크업의 실제 표시 폭이다.
+   - 640px 미만: 액자가 -mx-2로 섹션 여백(px-6, 24px)보다 8px씩 넓어져 좌우 16px만 남는다.
+   - 640px 이상: 섹션 여백 24px씩, max-w-5xl(1024px)에서 멈춘다(1024 - 48 = 976px). */
+const MOBILE_SIZES = 'calc(100vw - 32px)';
+const DESKTOP_SIZES = '(min-width: 1024px) 976px, calc(100vw - 48px)';
+
+async function buildSources(image: ImageMetadata, sizes: string, media?: string) {
+  const { width, height } = getLogicalSize(image);
+  return Promise.all(
+    SCREENSHOT_SOURCE_FORMATS.map(async (format) => {
+      const optimized = await getImage({ src: image, format, width, height, widths: getSrcsetWidths(image) });
+      return { media, type: `image/${format}`, srcset: optimized.srcSet.attribute, sizes, width, height };
+    }),
+  );
+}
+
+const heroSize = getLogicalSize(heroImage);
+const [mobileSources, desktopSources, fallbackImage] = await Promise.all([
+  buildSources(heroMobileImage, MOBILE_SIZES, MOBILE_MEDIA),
+  buildSources(heroImage, DESKTOP_SIZES),
+  getImage({ src: heroImage, format: SCREENSHOT_FALLBACK_FORMAT, ...heroSize }),
+]);
+// media가 있는 모바일 <source>가 앞에 와야 640px 미만에서 먼저 골라진다.
+const sources = [...mobileSources, ...desktopSources];
+---
+
+<div
+  class="-mx-2 overflow-hidden rounded-xl border border-zinc-800 bg-zinc-900 shadow-2xl shadow-emerald-950/20 sm:mx-0"
+>
+  <picture>
+    {sources.map((source) => <source {...source} />)}
+    {/* 첫 화면 이미지라 지연 로딩하지 않고 먼저 받는다. width·height는 기본(hero) 비율이고,
+        모바일 <source>의 width·height가 hero-mobile 비율로 덮어써 자리를 미리 잡는다.
+        hero-mobile은 오른쪽이 잘린 채 찍혀서 그 폭에서만 오른쪽 가장자리를 흐린다. */}
+    <img
+      src={fallbackImage.src}
+      alt={alt}
+      width={heroSize.width}
+      height={heroSize.height}
+      loading="eager"
+      fetchpriority="high"
+      decoding="async"
+      class="block h-auto w-full max-sm:fade-right-edge"
+    />
+  </picture>
+</div>

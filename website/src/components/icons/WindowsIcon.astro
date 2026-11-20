@@ -1,0 +1,12 @@
+---
+// Windows 로고(네 칸 사각형). 이모지 🪟는 OS마다 모양이 달라 인라인 SVG로 통일한다.
+// 장식용이라 스크린리더에서 숨기고, 색은 currentColor로 주변 글자를 따른다.
+interface Props {
+  class?: string;
+}
+const { class: className } = Astro.props;
+---
+
+<svg viewBox="0 0 24 24" class={className} fill="currentColor" aria-hidden="true" focusable="false">
+  <path d="M0 0h11.4v11.4H0zM12.6 0H24v11.4H12.6zM0 12.6h11.4V24H0zM12.6 12.6H24V24H12.6z"></path>
+</svg>

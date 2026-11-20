@@ -14,3 +14,24 @@ html {
      지금 있는 앵커와 앞으로 추가되는 앵커가 모두 적용받는다. */
   scroll-padding-top: calc(var(--gnb-height) + var(--gnb-anchor-gap));
 }
+
+/* 창 오른쪽이 잘린 채 찍힌 스크린샷(hero-mobile, feature-macos)의 잘린 단면을 액자 배경으로 흐린다.
+   @utility로 선언해 max-sm: 같은 변형도 붙일 수 있다. */
+@utility fade-right-edge {
+  mask-image: linear-gradient(to right, #000 calc(100% - 4rem), transparent);
+}
+
+/* 오른쪽과 아래가 함께 잘린 캡처(feature-macos)용. 두 그라디언트가 겹치는 부분만 남긴다. */
+@utility fade-right-bottom-edges {
+  mask-image:
+    linear-gradient(to right, #000 calc(100% - 4rem), transparent),
+    linear-gradient(to bottom, #000 calc(100% - 3rem), transparent);
+  mask-composite: intersect;
+}
+
+/* 한국어는 어절 단위로만 줄바꿈한다("렌더/링." 같은 어절 중간 끊김 방지).
+   공백 없는 긴 어절이 칸을 넘칠 때만 break-word가 예외로 끊는다. */
+:lang(ko) {
+  word-break: keep-all;
+  overflow-wrap: break-word;
+}

@@ -1,0 +1,75 @@
+---
+// 기능 하나를 "스크린샷 + 제목 + 설명" 한 행으로 그린다.
+// 모바일은 이미지 위·글 아래로 쌓고, md(768px) 이상은 좌우로 놓는다. 지그재그는 부모가 isImageOnRight로 정한다.
+import { Picture } from 'astro:assets';
+import {
+  FADE_CLASS_BY_CROPPED_EDGES,
+  featureScreenshots,
+  getLogicalSize,
+  getSrcsetWidths,
+  SCREENSHOT_FALLBACK_FORMAT,
+  SCREENSHOT_SOURCE_FORMATS,
+  type FeatureScreenshotKey,
+} from '../screenshots';
+
+interface Props {
+  title: string;
+  desc: string;
+  image: FeatureScreenshotKey;
+  alt: string;
+  /** md 이상에서 이미지를 글 오른쪽에 둔다. */
+  isImageOnRight: boolean;
+}
+const { title, desc, image: imageKey, alt, isImageOnRight } = Astro.props;
+
+const { image, croppedEdges } = featureScreenshots[imageKey];
+const logicalSize = getLogicalSize(image);
+
+// 액자(border 1px)까지 더해야 이미지가 논리 너비 그대로(배율 1.0) 그려진다. 그보다 키우지 않는다.
+const FRAME_BORDER_PX = 1;
+const frameMaxWidth = logicalSize.width + FRAME_BORDER_PX * 2;
+const imageClass = ['block h-auto w-full', FADE_CLASS_BY_CROPPED_EDGES[croppedEdges]].filter(Boolean).join(' ');
+
+/* sizes는 아래 마크업의 실제 표시 폭이다(최대는 논리 너비).
+   - lg(1024px) 이상: 이미지 칸 56%(976px의 56% = 546px)가 논리 너비보다 넓어 논리 너비로 멈춘다.
+   - md(768px) 이상: 이미지 칸 = (화면 - 섹션 여백 24px×2) × 56%
+   - sm(640px) 이상: 한 줄로 쌓이고 max-w-xl(576px) 안이라 논리 너비 그대로다.
+   - 640px 미만: -mx-2로 섹션 여백보다 8px씩 넓어져 좌우 16px만 남는다. */
+const sizes = [
+  `(min-width: 1024px) ${logicalSize.width}px`,
+  '(min-width: 768px) calc((100vw - 48px) * 0.56)',
+  `(min-width: 640px) ${logicalSize.width}px`,
+  'calc(100vw - 32px)',
+].join(', ');
+---
+
+{/* 글을 DOM 앞에 둬서 스크린리더가 제목 → 설명 → 이미지 순으로 읽게 하고, 화면 배치는 flex 방향으로 바꾼다. */}
+<li
+  class:list={[
+    'mx-auto flex max-w-xl flex-col-reverse gap-6 md:max-w-none md:items-center md:gap-10 lg:gap-16',
+    isImageOnRight ? 'md:flex-row' : 'md:flex-row-reverse',
+  ]}
+>
+  <div class="md:min-w-0 md:flex-1">
+    <h3 class="text-xl font-semibold tracking-tight text-balance">{title}</h3>
+    <p class="mt-3 leading-relaxed text-zinc-400 text-pretty">{desc}</p>
+  </div>
+  <div
+    class="-mx-2 overflow-hidden rounded-xl border border-zinc-800 bg-zinc-900 shadow-2xl shadow-emerald-950/20 sm:mx-0 md:w-[56%] md:shrink-0"
+    style={{ maxWidth: `${frameMaxWidth}px` }}
+  >
+    <Picture
+      src={image}
+      alt={alt}
+      width={logicalSize.width}
+      height={logicalSize.height}
+      widths={getSrcsetWidths(image)}
+      sizes={sizes}
+      formats={[...SCREENSHOT_SOURCE_FORMATS]}
+      fallbackFormat={SCREENSHOT_FALLBACK_FORMAT}
+      loading="lazy"
+      decoding="async"
+      class={imageClass}
+    />
+  </div>
+</li>
